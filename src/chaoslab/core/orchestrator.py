@@ -85,6 +85,8 @@ class Orchestrator:
         self.before_snapshot: Snapshot | None = None
         self.last_diff: list[str] = []
         self.last_state_lines: list[str] = []
+        self.last_explanation: str = ""
+        self.last_fallback: bool = False
         self.finished = False
 
     # ------------------------------------------------------------------ state
@@ -149,6 +151,8 @@ class Orchestrator:
         state_lines = _snapshot_lines(snapshot)
         self.last_state_lines = state_lines
         explanation, fallback = self._scripted_explain(state_lines, "explain_baseline")
+        self.last_explanation = explanation
+        self.last_fallback = fallback
         return ObserveResult(
             step_id=step.id,
             commands=commands,
@@ -264,6 +268,10 @@ class Orchestrator:
         )
 
     # ------------------------------------------------------------------ chaos
+    def snapshot(self) -> Snapshot:
+        """Capture current facts using the after-chaos probe set (baseline or post-chaos)."""
+        return collect_snapshot(self.adapter.run_many(self.lesson.commands.after_chaos))
+
     def chaos_menu(self) -> list[ChaosMenuItem]:
         return [
             ChaosMenuItem(id=c.id, label=c.label, type=c.type, risk=c.risk, enabled=c.enabled)
@@ -285,6 +293,8 @@ class Orchestrator:
         explanation, fallback = self._scripted_explain(
             changed, "explain_impact", chaos_id=option_id, chaos_effect=effect
         )
+        self.last_explanation = explanation
+        self.last_fallback = fallback
         return ChaosOutcome(
             chaos_id=option_id,
             label=option.label,

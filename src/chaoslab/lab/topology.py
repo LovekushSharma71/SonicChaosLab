@@ -25,6 +25,35 @@ def topo_file() -> Path:
     return Path(os.environ.get("CHAOSLAB_TOPO", "topo/chaoslab.clab.yml"))
 
 
+def describe() -> dict:
+    """Static topology description (nodes, links, IPs/ASNs) for the API and UI diagram (§7)."""
+    return {
+        "nodes": [
+            {"name": "leaf1", "kind": "sonic-vs", "asn": 65001},
+            {"name": "leaf2", "kind": "sonic-vs", "asn": 65002},
+            {"name": "h1", "kind": "linux", "ip": "10.0.1.10/24", "vlan": "Vlan10"},
+            {"name": "h2", "kind": "linux", "ip": "10.0.2.10/24", "vlan": "Vlan20"},
+        ],
+        "links": [
+            {
+                "a": "leaf1:Ethernet0",
+                "b": "leaf2:Ethernet0",
+                "subnet": "10.0.12.0/31",
+                "role": "ebgp",
+            },
+            {
+                "a": "leaf1:Ethernet4",
+                "b": "leaf2:Ethernet4",
+                "subnet": "10.0.12.2/31",
+                "role": "ebgp",
+            },
+            {"a": "leaf1:Ethernet8", "b": "h1:eth1", "role": "access"},
+            {"a": "leaf2:Ethernet8", "b": "h2:eth1", "role": "access"},
+        ],
+        "mtu": 9100,
+    }
+
+
 def preflight() -> tuple[bool, str]:
     """Check that docker, containerlab, and the topology file are present."""
     if shutil.which("docker") is None:
