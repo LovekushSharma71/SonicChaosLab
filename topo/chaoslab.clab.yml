@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+# SONiC ChaosLab topology (PRODUCT.md §7): 2 sonic-vs leafs + 2 alpine hosts.
+# Two parallel /31 eBGP links between the leafs (ECMP); one access host per leaf on Vlan10/Vlan20.
+# sonic-vs images are amd64-only — deploy on an x86 host (see topo/README.md).
+name: chaoslab
+
+topology:
+  nodes:
+    leaf1:
+      kind: sonic-vs
+      image: docker-sonic-vs:latest
+      binds:
+        - configs/leaf1.json:/etc/sonic/config_db.json:ro
+    leaf2:
+      kind: sonic-vs
+      image: docker-sonic-vs:latest
+      binds:
+        - configs/leaf2.json:/etc/sonic/config_db.json:ro
+    h1:
+      kind: linux
+      image: alpine:latest
+      exec:
+        - ip link set eth1 down
+        - ip link set eth1 address 02:00:00:00:01:10
+        - ip link set eth1 mtu 9100
+        - ip link set eth1 up
+        - ip addr add 10.0.1.10/24 dev eth1
+        - ip route replace default via 10.0.1.1
+    h2:
+      kind: linux
+      image: alpine:latest
+      exec:
+        - ip link set eth1 down
+        - ip link set eth1 address 02:00:00:00:02:10
+        - ip link set eth1 mtu 9100
+        - ip link set eth1 up
+        - ip addr add 10.0.2.10/24 dev eth1
+        - ip route replace default via 10.0.2.1
+
+  links:
+    # Parallel inter-switch /31 links -> SONiC Ethernet0 (eth1) and Ethernet4 (eth2).
+    - endpoints: ["leaf1:eth1", "leaf2:eth1"]
+    - endpoints: ["leaf1:eth2", "leaf2:eth2"]
+    # Access links to the hosts -> SONiC Ethernet8 (eth3).
+    - endpoints: ["leaf1:eth3", "h1:eth1"]
+    - endpoints: ["leaf2:eth3", "h2:eth1"]

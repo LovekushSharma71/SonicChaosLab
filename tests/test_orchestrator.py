@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
+import yaml
 
 from chaoslab.core.engine import build_orchestrator
 from chaoslab.lab.chaos import ChaosError
@@ -145,3 +148,22 @@ def test_config_set_batch_allowlist(repo_root):
     assert ok.accepted and ok.rejected_line is None
     bad = orch.config_set("leaf1", ["config vlan add 200", "systemctl stop bgp"])
     assert not bad.accepted and bad.rejected_line == "systemctl stop bgp"
+
+
+def test_demo_mode_serves_canned_answers(repo_root):
+    demo = {
+        "version": 1,
+        "lessons": {
+            "bgp_reconvergence": {
+                "card_version": 1,
+                "observe": {"o_peering": "REHEARSED baseline explanation."},
+                "impact": {},
+            }
+        },
+    }
+    with open(os.environ["CHAOSLAB_DEMO_SCRIPT"], "w") as handle:
+        yaml.safe_dump(demo, handle)
+    orch = _orch(repo_root, demo_mode=True)
+    _goto(orch, "observe")
+    result = orch.observe()
+    assert result.explanation == "REHEARSED baseline explanation."

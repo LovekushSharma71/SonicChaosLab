@@ -20,5 +20,8 @@ htmlcov/
 .env
 *.local
 
+# Generated demo answers (regenerate with `make demo-answers`)
+demo_script.yaml
+
 # OS
 .DS_Store

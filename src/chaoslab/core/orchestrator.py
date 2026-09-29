@@ -28,6 +28,7 @@ from ..llm.guards import (
 )
 from ..llm.model import FallbackExhausted, safe_generate, safe_stream
 from ..settings import Settings
+from .demo import DemoStore, load_demo_store
 from .models import (
     ChaosMenuItem,
     ChaosOutcome,
@@ -78,6 +79,7 @@ class Orchestrator:
         self.settings = settings
         self.chaos = ChaosEngine(adapter)
         self.memory = ChatMemory()
+        self.demo: DemoStore | None = load_demo_store() if settings.demo_mode else None
         self.session_id = session_id or uuid.uuid4().hex
         self.step_index = 0
         self.questions_used = 0
@@ -139,6 +141,16 @@ class Orchestrator:
     def teach_text(self) -> str:
         return self.loaded.teach_sections.get(self.current_step.id, self.current_step.title)
 
+    def _demo_observe(self, step_id: str) -> str | None:
+        if not self.demo:
+            return None
+        return self.demo.observe(self.lesson.id, step_id, self.lesson.meta.card_version)
+
+    def _demo_impact(self, chaos_id: str) -> str | None:
+        if not self.demo:
+            return None
+        return self.demo.impact(self.lesson.id, chaos_id, self.lesson.meta.card_version)
+
     # ---------------------------------------------------------------- observe
     def _commands_for_step(self, step_id: str) -> list[str]:
         return self.lesson.commands.per_step.get(step_id, self.lesson.commands.baseline)
@@ -150,7 +162,11 @@ class Orchestrator:
         snapshot = collect_snapshot(outputs)
         state_lines = _snapshot_lines(snapshot)
         self.last_state_lines = state_lines
-        explanation, fallback = self._scripted_explain(state_lines, "explain_baseline")
+        canned = self._demo_observe(step.id)
+        if canned is not None:
+            explanation, fallback = canned, False
+        else:
+            explanation, fallback = self._scripted_explain(state_lines, "explain_baseline")
         self.last_explanation = explanation
         self.last_fallback = fallback
         return ObserveResult(
@@ -290,9 +306,13 @@ class Orchestrator:
         self.last_diff = changed
         self.last_state_lines = changed or _snapshot_lines(after)
         effect = self.card.expected_chaos_effects.get(option_id)
-        explanation, fallback = self._scripted_explain(
-            changed, "explain_impact", chaos_id=option_id, chaos_effect=effect
-        )
+        canned = self._demo_impact(option_id)
+        if canned is not None:
+            explanation, fallback = canned, False
+        else:
+            explanation, fallback = self._scripted_explain(
+                changed, "explain_impact", chaos_id=option_id, chaos_effect=effect
+            )
         self.last_explanation = explanation
         self.last_fallback = fallback
         return ChaosOutcome(

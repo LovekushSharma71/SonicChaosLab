@@ -1,0 +1,85 @@
+# Golden set — 20 questions seeded from the lesson QnA banks.
+# Used by scripts/run_golden.py to eval the pipeline: on-topic questions must be answered,
+# off-topic ones must be redirected by the code scope gate. With a real provider the `note`
+# field guides human review of answer quality; the fake provider only checks routing.
+cases:
+  - lesson: switches_explained
+    question: "What is the difference between the Admin and Oper columns?"
+    on_topic: true
+    note: "Admin is configured intent; Oper is achieved reality."
+  - lesson: switches_explained
+    question: "Why does leaf2 appear twice in the LLDP table?"
+    on_topic: true
+    note: "Two parallel inter-switch links, one neighbor entry per local port."
+  - lesson: switches_explained
+    question: "What does untagged mean in the VLAN member list?"
+    on_topic: true
+    note: "Access port; the switch stamps/strips the VLAN, host is unaware."
+  - lesson: switches_explained
+    question: "Walk me through how h1's MAC ended up in the FDB table."
+    on_topic: true
+    note: "Learning: source MAC + arrival port recorded on every frame."
+  - lesson: switches_explained
+    question: "Please recommend a good movie to watch tonight."
+    on_topic: false
+    note: "Off-topic; expect the redirect line."
+  - lesson: inside_sonic
+    question: "What are the main SONiC containers and what does each do?"
+    on_topic: true
+    note: "database/swss/syncd/bgp/lldp and their roles."
+  - lesson: inside_sonic
+    question: "What exactly does CONFIG_DB hold, and what does it not hold?"
+    on_topic: true
+    note: "Declarative intent; not achieved reality (that is STATE_DB)."
+  - lesson: inside_sonic
+    question: "Which process moves data from CONFIG_DB to APPL_DB?"
+    on_topic: true
+    note: "A subscribed manager (e.g. vlanmgrd) in swss."
+  - lesson: inside_sonic
+    question: "Why isn't the change atomic — what does eventual consistency mean here?"
+    on_topic: true
+    note: "Producer/consumer over Redis; eventual consistency and propagation lag."
+  - lesson: inside_sonic
+    question: "Suggest a dinner idea for tonight."
+    on_topic: false
+    note: "Off-topic; expect the redirect line."
+  - lesson: bgp_reconvergence
+    question: "What does Established mean in show bgp summary?"
+    on_topic: true
+    note: "FSM reached Established; the PfxRcd column shows a number."
+  - lesson: bgp_reconvergence
+    question: "What is the difference between advertised-routes and received-routes?"
+    on_topic: true
+    note: "Independent directions: what I send vs what my peer sends me."
+  - lesson: bgp_reconvergence
+    question: "Why does the prefix 10.0.2.0/24 have two next-hops?"
+    on_topic: true
+    note: "ECMP: equal-cost paths over both parallel links installed together."
+  - lesson: bgp_reconvergence
+    question: "What are keepalive and hold time in this lab?"
+    on_topic: true
+    note: "3 s keepalive / 10 s hold; fast-fallover skips the hold wait on link down."
+  - lesson: bgp_reconvergence
+    question: "Who won the cricket match yesterday?"
+    on_topic: false
+    note: "Off-topic; expect the redirect line."
+  - lesson: mtu_mismatch
+    question: "What is MTU and why is it 9100 here instead of 1500?"
+    on_topic: true
+    note: "Largest packet a link carries; jumbo frames for data-center throughput."
+  - lesson: mtu_mismatch
+    question: "Why does a plain ping prove nothing about the MTU ceiling?"
+    on_topic: true
+    note: "Tiny packets fit anything; only a DF size sweep tests the ceiling."
+  - lesson: mtu_mismatch
+    question: "What decides whether an oversized packet is fragmented or dropped?"
+    on_topic: true
+    note: "The DF bit: unset fragments, set drops and returns ICMP frag-needed."
+  - lesson: mtu_mismatch
+    question: "Why does BGP stay Established while jumbo data fails?"
+    on_topic: true
+    note: "TCP MSS keeps BGP's small segments under the narrowed MTU."
+  - lesson: mtu_mismatch
+    question: "What is the tallest mountain on Earth?"
+    on_topic: false
+    note: "Off-topic; expect the redirect line."

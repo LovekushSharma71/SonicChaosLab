@@ -1,0 +1,45 @@
+{
+  "DEVICE_METADATA": {
+    "localhost": {
+      "hostname": "leaf1",
+      "hwsku": "Force10-S6000",
+      "type": "LeafRouter",
+      "bgp_asn": "65001"
+    }
+  },
+  "PORT": {
+    "Ethernet0": { "admin_status": "up", "mtu": "9100", "speed": "40000", "alias": "Ethernet0" },
+    "Ethernet4": { "admin_status": "up", "mtu": "9100", "speed": "40000", "alias": "Ethernet4" },
+    "Ethernet8": { "admin_status": "up", "mtu": "9100", "speed": "40000", "alias": "Ethernet8" }
+  },
+  "INTERFACE": {
+    "Ethernet0": {},
+    "Ethernet0|10.0.12.0/31": {},
+    "Ethernet4": {},
+    "Ethernet4|10.0.12.2/31": {}
+  },
+  "VLAN": {
+    "Vlan10": { "vlanid": "10" }
+  },
+  "VLAN_MEMBER": {
+    "Vlan10|Ethernet8": { "tagging_mode": "untagged" }
+  },
+  "VLAN_INTERFACE": {
+    "Vlan10": {},
+    "Vlan10|10.0.1.1/24": {}
+  },
+  "BGP_NEIGHBOR": {
+    "10.0.12.1": { "asn": "65002", "holdtime": "10", "keepalive": "3", "name": "leaf2", "nhopself": "0", "rrclient": "0" },
+    "10.0.12.3": { "asn": "65002", "holdtime": "10", "keepalive": "3", "name": "leaf2", "nhopself": "0", "rrclient": "0" }
+  },
+  "BGP_GLOBALS": {
+    "default": { "local_asn": "65001", "router_id": "10.0.12.0", "fast_external_failover": "true" }
+  },
+  "BGP_GLOBALS_AF_NETWORK": {
+    "default|ipv4_unicast|10.0.1.0/24": {}
+  },
+  "LOOPBACK_INTERFACE": {
+    "Loopback0": {},
+    "Loopback0|10.0.0.1/32": {}
+  }
+}

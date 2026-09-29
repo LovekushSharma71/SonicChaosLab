@@ -27,4 +27,5 @@ def real_lessons_dir() -> Path:
 def isolate_settings(tmp_path, monkeypatch):
     """Point settings and lessons resolution at throwaway locations by default."""
     monkeypatch.setenv("CHAOSLAB_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CHAOSLAB_DEMO_SCRIPT", str(tmp_path / "demo_absent.yaml"))
     monkeypatch.delenv("CHAOSLAB_LESSONS", raising=False)
