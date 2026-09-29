@@ -1,0 +1,7 @@
+course: SONiC ChaosLab core track
+version: 1
+lessons:
+- switches_explained/lesson.yaml
+- inside_sonic/lesson.yaml
+- bgp_reconvergence/lesson.yaml
+- mtu_mismatch/lesson.yaml

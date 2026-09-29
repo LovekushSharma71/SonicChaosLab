@@ -1,0 +1,365 @@
+id: mtu_mismatch
+title: 'The config pipeline betrayed: MTU mismatch'
+difficulty: core
+requires:
+- switches_explained
+- inside_sonic
+- bgp_reconvergence
+teach_file: ./teach.md
+card_file: ./card.yaml
+steps:
+- id: t_mtu
+  kind: teach
+  title: 'S1: MTU — the biggest box a link will carry'
+  optional: false
+- id: o_mtu
+  kind: observe
+  title: 'S1: Read every port''s MTU on both leafs'
+  optional: false
+- id: q_mtu
+  kind: qna
+  title: 'S1: Questions — MTU basics'
+  optional: false
+- id: t_bigpath
+  kind: teach
+  title: 'S2: Proving the jumbo path — a DF ping size sweep'
+  optional: false
+- id: o_bigpath
+  kind: observe
+  title: 'S2: h1 to h2 at 1472 and 8972 payload with DF set'
+  optional: false
+- id: q_bigpath
+  kind: qna
+  title: 'S2: Questions — packet sizes & overhead'
+  optional: false
+- id: t_mtu_redis
+  kind: teach
+  title: 'S3: Where MTU lives — CONFIG_DB intent to kernel reality'
+  optional: false
+- id: o_mtu_redis
+  kind: observe
+  title: 'S3: PORT.mtu across CONFIG_DB, APPL_DB, and the netdev'
+  optional: false
+- id: q_mtu_redis
+  kind: qna
+  title: 'S3: Questions — MTU in the pipeline'
+  optional: false
+- id: t_frag
+  kind: teach
+  title: 'S4: Fragmentation and the DF bit — split it or say so'
+  optional: true
+- id: o_frag
+  kind: observe
+  title: 'S4: The same oversized ping with and without DF'
+  optional: true
+- id: q_frag
+  kind: qna
+  title: 'S4: Questions — fragmentation & PMTUD'
+  optional: true
+- id: t_ecmp_mtu
+  kind: teach
+  title: 'S5: ECMP times MTU — why "sometimes broken" exists'
+  optional: true
+- id: o_ecmp_mtu
+  kind: observe
+  title: 'S5: Both ECMP members at 9100 (the healthy precondition)'
+  optional: true
+- id: q_ecmp_mtu
+  kind: qna
+  title: 'S5: Questions — hashing meets MTU'
+  optional: true
+- id: t_detect
+  kind: teach
+  title: 'S6: The detection method — a checklist for "up but broken"'
+  optional: true
+- id: o_detect
+  kind: observe
+  title: 'S6: Status vs counters vs targeted DF probes'
+  optional: true
+- id: q_detect
+  kind: qna
+  title: 'S6: Questions — detection'
+  optional: true
+- id: t_bgp_mtu
+  kind: teach
+  title: 'S7: Why BGP survives what your data doesn''t (MSS)'
+  optional: true
+- id: o_bgp_mtu
+  kind: observe
+  title: 'S7: Session uptime and endpoints beside the MTU facts'
+  optional: true
+- id: q_bgp_mtu
+  kind: qna
+  title: 'S7: Questions — MTU vs the control plane'
+  optional: true
+- id: chaos
+  kind: chaos_select
+  title: Pick one failure to inject (7 options)
+  optional: false
+- id: restore
+  kind: restore
+  title: Heal the lab, re-run the jumbo sweep to verify
+  optional: false
+commands:
+  baseline:
+  - 'leaf1: show interfaces status'
+  - 'leaf2: show interfaces status'
+  after_chaos:
+  - 'leaf1: show interfaces status'
+  - 'leaf2: show interfaces status'
+  - 'leaf1: show ip route 10.0.2.0/24'
+  - 'leaf1: show bgp summary'
+  - 'h1: ping -c 5 10.0.2.10'
+  - 'h1: ping -M do -s 1472 -c 5 10.0.2.10'
+  - 'h1: ping -M do -s 8972 -c 5 10.0.2.10'
+  - 'h1: ping -s 8972 -c 5 10.0.2.10'
+  per_step:
+    o_mtu:
+    - 'leaf1: show interfaces status'
+    - 'leaf2: show interfaces status'
+    o_bigpath:
+    - 'h1: ping -c 3 10.0.2.10'
+    - 'h1: ping -M do -s 1472 -c 3 10.0.2.10'
+    - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+    o_mtu_redis:
+    - 'leaf1: sonic-db-cli CONFIG_DB hget "PORT|Ethernet0" mtu'
+    - 'leaf1: sonic-db-cli APPL_DB hget "PORT_TABLE:Ethernet0" mtu'
+    - 'leaf1: show interfaces status'
+    o_frag:
+    - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+    - 'h1: ping -s 8972 -c 3 10.0.2.10'
+    o_ecmp_mtu:
+    - 'leaf1: show interfaces status'
+    - 'leaf1: show ip route 10.0.2.0/24'
+    - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+    o_detect:
+    - 'h1: ping -c 3 10.0.2.10'
+    - 'h1: ping -M do -s 1472 -c 3 10.0.2.10'
+    - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+    - 'leaf1: show interfaces status'
+    - 'leaf2: show interfaces status'
+    o_bgp_mtu:
+    - 'leaf1: show bgp summary'
+    - 'leaf1: show interfaces status'
+    - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+  vocabulary:
+  - show interfaces status*
+  - show interfaces counters*
+  - show ip interfaces*
+  - show ip route*
+  - show bgp summary*
+  - config interface mtu*
+  - sonic-db-cli CONFIG_DB *
+  - sonic-db-cli APPL_DB *
+  - sonic-db-cli STATE_DB *
+  - redis-cli *
+  - ping*
+  - ip link show*
+  - ip link set*
+  - ip addr show*
+  - tracepath*
+  - mtu*
+chaos_options:
+- id: c_mtu1500_one_side
+  label: 'The classic mismatch: 1500 on one end of one link'
+  type: config
+  inject:
+  - 'leaf1: sudo config interface mtu Ethernet0 1500'
+  restore:
+  - 'leaf1: sudo config interface mtu Ethernet0 9100'
+  - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+  expected_effects:
+  - 'Ethernet0 now reads MTU 1500 while leaf2''s end reads 9100 — a true mismatch on one ECMP member. The link stays Oper/Admin up; BGP stays Established (small packets fit); plain ping works; `ping -M do -s 1472` works. But `ping -M do -s 8972` fails **for flows hashed onto Ethernet0** — direction- and hash-dependent, because oversized frames hit the 1500 ceiling and are dropped `[VERIFY-ON-LAB: which direction enforces (leaf1 ingress vs egress) and how reliably a single tuple lands on Ethernet0]`. The MTU column on leaf1 is the one place the fault is visible. Recovery: set 9100 back; jumbo sweep passes again.'
+  risk: low
+  enabled: true
+  plan_b: apply the 1500 to **leaf2's** Ethernet0 instead — mirror the asymmetry from the far side.
+- id: c_mtu1500_one_link
+  label: One skinny lane in the ECMP pair
+  type: config
+  inject:
+  - 'leaf1: sudo config interface mtu Ethernet0 1500'
+  - 'leaf2: sudo config interface mtu Ethernet0 1500'
+  restore:
+  - 'leaf1: sudo config interface mtu Ethernet0 9100'
+  - 'leaf2: sudo config interface mtu Ethernet0 9100'
+  - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+  expected_effects:
+  - 'Both ends of the *first* ECMP link are 1500; the *second* link (Ethernet4) stays 9100. Now the fault is symmetric on one path but the other path is fine — the textbook **intermittent** failure: jumbo flows hashed to Ethernet0 die, jumbo flows hashed to Ethernet4 succeed, small flows all succeed. Repeated `ping -M do -s 8972` may pass some runs and fail others depending on hashing `[VERIFY-ON-LAB: probe variability]`. The clearest ECMP×MTU demonstration. Recovery: both ends back to 9100.'
+  risk: low
+  enabled: true
+  plan_b: narrow **Ethernet4** instead of Ethernet0 — proves the effect is about "one member," not a specific port.
+- id: c_mtu1500_all_links
+  label: 'Everything skinny: whole fabric at 1500'
+  type: config
+  inject:
+  - 'leaf1: sudo config interface mtu Ethernet0 1500'
+  - 'leaf1: sudo config interface mtu Ethernet4 1500'
+  - 'leaf2: sudo config interface mtu Ethernet0 1500'
+  - 'leaf2: sudo config interface mtu Ethernet4 1500'
+  restore:
+  - 'leaf1: sudo config interface mtu Ethernet0 9100'
+  - 'leaf1: sudo config interface mtu Ethernet4 9100'
+  - 'leaf2: sudo config interface mtu Ethernet0 9100'
+  - 'leaf2: sudo config interface mtu Ethernet4 9100'
+  - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+  expected_effects:
+  - 'Both ECMP members, both ends, at 1500. Now the jumbo blackhole is **deterministic** — *every* flow''s large DF ping fails, regardless of hashing, while small pings and BGP are untouched. The cleanest "up but broken" for a demo: 100% reachability, 100% small-packet success, 100% large-packet failure. Recovery: all four back to 9100; jumbo sweep passes.'
+  risk: medium
+  enabled: true
+  plan_b: additionally lower the *access* ports and host `eth1` to 1500 — making the path *consistently* 1500 end to end, which actually **works** for ≤1500 traffic and teaches that "mismatch," not "small," is the real problem.
+- id: c_host_mtu
+  label: The host is the bottleneck
+  type: config
+  inject:
+  - 'h1: ip link set eth1 mtu 1500'
+  restore:
+  - 'h1: ip link set eth1 mtu 9100'
+  - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+  expected_effects:
+  - 'The narrow hop is now the *source itself*. h1 simply cannot emit a 9000-byte DF packet — `ping -M do -s 8972` fails **locally** with a "message too long"/"local error" before anything leaves h1, a categorically different signature from an in-network silent drop. Small pings and BGP unaffected. Teaches that "the network is broken" is sometimes "the endpoint is misconfigured," and that source-local errors are *loud* where in-network MTU drops are *silent*. Recovery: set eth1 back to 9100.'
+  risk: low
+  enabled: true
+  plan_b: narrow **h2's** eth1 instead — the far endpoint; return-direction jumbo replies fail while h1's forward path is fine.
+- id: c_access_port_mtu
+  label: 'Choke the front door: the access port'
+  type: config
+  inject:
+  - 'leaf1: sudo config interface mtu Ethernet8 1500'
+  restore:
+  - 'leaf1: sudo config interface mtu Ethernet8 9100'
+  - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+  expected_effects:
+  - 'h1 stays 9100 but its *first hop into the switch* (Ethernet8) is 1500. Oversized frames from h1 hit the narrow ingress port; the DF jumbo ping fails at the very first hop while everything else looks perfect. A single-port fault at the network edge rather than in the fabric — tests whether the learner checks the access port, not just the inter-switch links. Recovery: Ethernet8 back to 9100.'
+  risk: medium
+  enabled: false
+  plan_b: narrow **leaf2's** Ethernet8 (h2's access port) — breaks only the return direction.
+- id: c_tiny_mtu
+  label: 'Absurdly small: 1280 on the fabric'
+  type: config
+  inject:
+  - 'leaf1: sudo config interface mtu Ethernet0 1280'
+  - 'leaf1: sudo config interface mtu Ethernet4 1280'
+  - 'leaf2: sudo config interface mtu Ethernet0 1280'
+  - 'leaf2: sudo config interface mtu Ethernet4 1280'
+  restore:
+  - 'leaf1: sudo config interface mtu Ethernet0 9100'
+  - 'leaf1: sudo config interface mtu Ethernet4 9100'
+  - 'leaf2: sudo config interface mtu Ethernet0 9100'
+  - 'leaf2: sudo config interface mtu Ethernet4 9100'
+  - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+  expected_effects:
+  - 'The fabric is squeezed to 1280 (the IPv6 minimum, chosen as a memorably tiny value). Now even *modestly* large DF pings fail: `-s 1472` (1500-byte) dies too, not just jumbo — the ceiling dropped below standard Ethernet. BGP *should* survive via MSS (its segments shrink below 1280) `[VERIFY-ON-LAB: confirm session stays Established at 1280]`. Teaches that the threshold is a dial, and that TCP control traffic keeps ducking under it. Recovery: back to 9100.'
+  risk: medium
+  enabled: false
+  plan_b: set 1280 on **one** link only — combine the tiny-threshold effect with ECMP intermittency at a lower boundary.
+- id: c_pmtud_blackhole
+  label: 'Kill the messenger: drop ICMP fragmentation-needed'
+  type: config
+  inject:
+  - 'leaf1: sudo config interface mtu Ethernet0 1500'
+  - 'leaf1: sudo config interface mtu Ethernet4 1500'
+  - 'leaf2: sudo config interface mtu Ethernet0 1500'
+  - 'leaf2: sudo config interface mtu Ethernet4 1500'
+  - 'leaf1: iptables -A FORWARD -p icmp --icmp-type fragmentation-needed -j DROP'
+  restore:
+  - 'leaf1: iptables -D FORWARD -p icmp --icmp-type fragmentation-needed -j DROP'
+  - 'leaf1: sudo config interface mtu Ethernet0 9100'
+  - 'leaf1: sudo config interface mtu Ethernet4 9100'
+  - 'leaf2: sudo config interface mtu Ethernet0 9100'
+  - 'leaf2: sudo config interface mtu Ethernet4 9100'
+  - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
+  expected_effects:
+  - 'The real-world nightmare: the fabric is 1500 *and* the ICMP "fragmentation needed" messages that would tell senders to shrink are dropped. PMTUD is blinded — a DF sender gets no feedback, so large packets vanish with *no error returned* and no adaptation. This is why production MTU issues are so hated: the diagnostic signal itself is suppressed. Even the `-M do -s 8972` ping may hang with no ICMP reply rather than a clean failure. Recovery: remove the rule and restore MTUs.'
+  risk: high
+  enabled: false
+  plan_b: drop the frag-needed ICMP inbound at **h1** instead — blinds only the source's PMTUD while the network still emits the messages.
+observe:
+  facts:
+  - interface_status
+  - bgp_neighbors
+  - route_count
+  - ping_loss
+  - redis_keys
+  measure_recovery: true
+qna:
+  scope_keywords:
+  - mtu
+  - maximum transmission unit
+  - jumbo
+  - jumbo frame
+  - '9100'
+  - '1500'
+  - '1280'
+  - frame size
+  - packet size
+  - payload
+  - overhead
+  - path mtu
+  - pmtu
+  - path mtu discovery
+  - pmtud
+  - fragment
+  - fragmentation
+  - reassembly
+  - df
+  - df bit
+  - dont fragment
+  - drop
+  - silent drop
+  - blackhole
+  - icmp
+  - fragmentation needed
+  - frag needed
+  - ping
+  - ping -s
+  - ping -m do
+  - size sweep
+  - mss
+  - maximum segment size
+  - tcp
+  - clamp
+  - up but broken
+  - detection
+  - troubleshoot
+  - ecmp
+  - hashing
+  - intermittent
+  - netdev
+  - ip link
+  - port mtu
+  - config interface mtu
+  - mtu column
+  - '8972'
+  - '1472'
+  suggested_questions:
+    q_mtu:
+    - What is MTU, and why is it 9100 here instead of 1500?
+    - Why is a path only as wide as its narrowest link?
+    - What are the two things that can happen to a too-big packet?
+    q_bigpath:
+    - Why does a plain ping prove nothing about MTU?
+    - What do the `-s` and `-M do` options do, and why both?
+    - Why is `-s 8972` the jumbo test but `-s 1472` the 1500 test?
+    q_mtu_redis:
+    - Which three places store the MTU value, and how should they relate at baseline?
+    - What does "the config pipeline betrayed" actually mean for MTU?
+    - If CONFIG_DB says 1500 but the status column says 9100, what happened?
+    q_frag:
+    - What decides whether an oversized packet is fragmented or dropped?
+    - What is PMTUD, and what message makes it work?
+    - Why can the same big ping fail with `-M do` but succeed without it?
+    q_ecmp_mtu:
+    - Why would only *some* flows fail when one ECMP link is 1500?
+    - How does per-flow hashing turn an MTU fault into intermittency?
+    - What's the healthy precondition this scenario checks before breaking anything?
+    q_detect:
+    - Walk me through the checklist for an "up but broken" MTU fault.
+    - Why do status, routes, and BGP all fail to reveal an MTU problem?
+    - Which single command finally *locates* the fault once a DF probe confirms it?
+    q_bgp_mtu:
+    - Why does BGP stay Established when a 1500 MTU is blackholing h1→h2 jumbo data?
+    - What is MSS, and how does it keep TCP under the MTU ceiling?
+    - How is this the ultimate example of control plane vs data plane?
+meta:
+  verified_on: UNVERIFIED — docker-sonic-vs:202405
+  card_version: 1

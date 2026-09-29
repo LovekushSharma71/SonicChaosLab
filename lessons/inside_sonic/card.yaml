@@ -1,0 +1,110 @@
+objective: The learner can describe SONiC as cooperating containers around a shared Redis, name the databases in the config pipeline and what each holds, trace a single change from CONFIG_DB intent to ASIC_DB/SAI reality (and read every hop live), explain propagation lag and eventual consistency, distinguish intent (CONFIG_DB) from reality (STATE_DB), and reason about which container/database a given failure breaks.
+in_scope_subtopics:
+- Container roles (database/swss/syncd/bgp/lldp/…)
+- CONFIG_DB tables and the declarative-intent model
+- the CONFIG_DB→\*mgrd→APPL_DB→orchagent→ASIC_DB→syncd→SAI staircase
+- producer/consumer over Redis
+- propagation lag/eventual consistency
+- STATE_DB readback
+- SAI object model and VID/RID
+- COUNTERS_DB and flex-counter polling with the name map
+- supervisord-managed processes
+- the eight chaos options' blast radius and recovery.
+key_concepts:
+- SONiC is a set of Docker containers coordinating exclusively through a shared Redis, not a single monolithic program.
+- CONFIG_DB (db 4) holds declarative intent and changes nothing by itself — it matters only because manager processes are subscribed to it.
+- A configuration change falls through four databases (CONFIG_DB→APPL_DB→ASIC_DB, with STATE_DB as readback), each hop performed by a subscribed process.
+- The pipeline is producer/consumer over Redis and eventually consistent, so there is a real, measurable propagation lag between intent and hardware.
+- swss hosts orchagent and the managers/syncers; syncd is the sole executor that programs the (virtual) ASIC via SAI.
+- STATE_DB (db 6) records observed reality and can disagree with CONFIG_DB — that disagreement is the system's most useful diagnostic.
+- ASIC_DB (db 1) stores desired hardware state as vendor-neutral SAI objects, with a VID-to-RID map bridging database ids and real chip ids.
+- COUNTERS_DB (db 2) is filled by a flex-counter poller, and a name map translates port names to the object ids whose counters you read.
+- Containers are supervised bundles of daemons, so a single daemon can fail (or be killed) with granular, legible impact.
+- Because subsystems are isolated, the control plane and an already-programmed data plane can be separated — stopping swss need not immediately stop forwarding.
+command_field_meanings:
+  show feature status:
+    meaning: 'Feature: subsystem name. State: enabled/disabled (intent). AutoRestart: restart policy. SystemState/others: runtime detail. Reads from CONFIG_DB/STATE_DB feature tables.'
+  docker ps:
+    meaning: 'Linux ground truth: CONTAINER ID, IMAGE, STATUS (Up/Paused/Exited + uptime), NAMES. The reality behind "feature enabled."'
+  sonic-db-cli <DB> keys "<pat>":
+    meaning: list keys / dump a row / read one field / count keys in a logical DB. Empty results mean zero rows, not error.
+  PORT|<name>:
+    meaning: '`PORT|<name>` (admin_status, mtu, speed…), `VLAN|Vlan<n>`, `VLAN_MEMBER|Vlan<n>|<port>`, `BGP_NEIGHBOR|<ip>`, `DEVICE_METADATA|localhost` (hostname, mac, bgp_asn).'
+  PORT_TABLE:<name>:
+    meaning: producer output for the forwarding layer, e.g. `PORT_TABLE:<name>`, `VLAN_TABLE:Vlan<n>` (note the `:` separator vs CONFIG_DB's `|`).
+  PORT_TABLE|<name>:
+    meaning: observed reality, e.g. `PORT_TABLE|<name>` with `oper_status`.
+  ASIC_STATE:SAI_OBJECT_TYPE_*:
+    meaning: '`ASIC_STATE:SAI_OBJECT_TYPE_*` desired chip objects; `VIDTORID` maps virtual ids to real ids `[VERIFY-ON-LAB: exact key]`.'
+  COUNTERS_PORT_NAME_MAP:
+    meaning: '`COUNTERS_PORT_NAME_MAP` (name→oid); `COUNTERS:<oid>` rows of statistics.'
+  docker exec <ctr> supervisorctl status:
+    meaning: per-container process list with RUNNING/STOPPED/EXITED states.
+  config vlan add -m <range>:
+    meaning: bulk VLAN create/delete; `config interface shutdown/startup <port>` — admin down/up; `config reload -y` — stop services and re-apply CONFIG_DB from scratch.
+  ping -c N <ip>:
+    meaning: reachability probe; loss and rtt are data even on non-zero exit.
+healthy_state_expectations: '- `docker ps` and `show feature status` agree: database, swss, syncd, bgp, lldp (and teamd/pmon/snmp) running/enabled.
+
+  - CONFIG_DB has PORT keys for Ethernet0/4/8, a VLAN + VLAN_MEMBER family, and ≥1 BGP_NEIGHBOR (10.0.12.1 / 10.0.12.3).
+
+  - Vlan30 absent before the pipeline demo; after `config vlan add 30` it appears in CONFIG_DB, then APPL_DB `VLAN_TABLE`, then in ASIC_DB as a +1 in the SAI VLAN object count (ASIC keys are opaque ids) — in that order, within a small lag `[VERIFY-ON-LAB: per-stage key names/timing]`.
+
+  - STATE_DB `PORT_TABLE|Ethernet8` `oper_status` matches `show interfaces status` Oper.
+
+  - ASIC_DB has one SAI_OBJECT_TYPE_PORT per front-panel port and a non-empty VID-to-RID map.
+
+  - swss supervisor lists orchagent + managers RUNNING; bgp lists bgpd/zebra/fpmsyncd RUNNING `[VERIFY-ON-LAB: names]`.
+
+  - h1→10.0.1.1 and h1→10.0.2.10: 0% loss.'
+expected_chaos_effects:
+  c_stop_swss: swss leaves `docker ps` immediately; feature may still read enabled; new config no longer programs; existing h1↔h2 may keep flowing `[VERIFY-ON-LAB]`. Recovery on start = a rebuild period (tens of seconds?) `[VERIFY-ON-LAB]`.
+  c_vlan_churn_50: CONFIG_DB dbsize +≈50 immediately; APPL_DB then ASIC_DB rise after it — the visible lag; no data-plane loss. Catch-up time load-dependent `[VERIFY-ON-LAB]`.
+  c_stop_orchagent: orchagent STOPPED; APPL_DB fills but ASIC_DB stops changing; existing forwarding persists; auto-restart may intervene `[VERIFY-ON-LAB]`.
+  c_pause_swss: swss shows Paused; pipeline silently stalls; no crash/log; unpause resumes.
+  c_stop_lldp_feature: lldp container gone within seconds; LLDP_ENTRY_TABLE ages out; 0% data-plane loss throughout; neighbors return after re-enable.
+  c_redis_rogue_key: Vlan999 either propagates (validation lives in CLI, not pipeline) or is ignored (manager validates) — report which; no data-plane impact either way.
+  c_stop_syncd: syncd gone; ASIC_DB may still accept objects but chip freezes at last state; recovery usually needs coordinated swss restart `[VERIFY-ON-LAB]`.
+  c_config_reload: full churn; dbsizes dip and recover; containers restart; BGP re-establishes; minute-scale outage `[VERIFY-ON-LAB]`.
+common_misconceptions:
+- misconception: A `config` command talks to the chip directly.
+  why_wrong: It only writes CONFIG_DB; subscribed managers translate it downward.
+  correct_model: Configuration is declarative intent; hardware change is an asynchronous consequence of the pipeline.
+- misconception: All the databases update atomically together.
+  why_wrong: They are producer/consumer stages with real lag; changes appear top-first, bottom-last.
+  correct_model: SONiC is eventually consistent; propagation lag is expected and measurable.
+- misconception: If swss is down, packets stop immediately.
+  why_wrong: syncd and the ASIC retain programmed state, so forwarding can persist.
+  correct_model: Control plane and already-programmed data plane are separable.
+- misconception: CONFIG_DB shows whether something is actually working.
+  why_wrong: CONFIG_DB is intent only; achieved reality lives in STATE_DB.
+  correct_model: Compare the two — intent-up/state-down is the key diagnostic.
+- misconception: ASIC_DB is Broadcom/Mellanox-specific.
+  why_wrong: It stores vendor-neutral SAI objects; syncd adapts them to the real chip.
+  correct_model: SAI is the abstraction that lets one SONiC speak to many ASICs.
+- misconception: '`show interfaces counters` reads the chip live.'
+  why_wrong: It reads COUNTERS_DB, filled by a periodic poller via a name map.
+  correct_model: Counters reflect the last poll, hence the freshness lag.
+- misconception: A container is a single program.
+  why_wrong: Each is a supervisord-managed bundle of daemons.
+  correct_model: Failure and recovery are per-daemon and granular.
+- misconception: Writing CONFIG_DB with sonic-db-cli is the same as using the CLI.
+  why_wrong: Raw writes skip CLI validation; the pipeline may accept or reject them.
+  correct_model: Use the CLI to configure; use raw reads to observe; raw writes are experiments.
+out_of_scope:
+- BGP/FRR internals and the route pipeline (Lesson 3)
+- MTU behavior (Lesson 4)
+- Layer-2 forwarding mechanics (Lesson 1)
+- warm/fast reboot internals
+- kubernetes feature ownership
+- telemetry/gNMI
+- platform/PMON hardware bring-up
+- SAI attribute-level semantics
+redirect_line: Good question, but it's outside this lesson's scope — how SONiC's containers and databases move a config into the ASIC. I'd recommend reading it up separately (the SONiC wiki Architecture page is the right source). Let's get back to the pipeline on leaf1 — pick a suggested question or run another on-topic command.
+source_urls:
+- https://github.com/sonic-net/SONiC/wiki/Architecture
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#feature
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#system-state
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#vlan--fdb
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#interfaces
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#loading-reloading-and-saving-configuration

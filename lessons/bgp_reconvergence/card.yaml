@@ -1,0 +1,113 @@
+objective: The learner can explain eBGP peering and the session FSM, distinguish advertise from receive, read a routing table and apply longest-prefix match, explain and verify ECMP, trace a BGP route through fpmsyncd into the SONiC pipeline, reason about keepalive/hold/fast-fallover timing (why some failures are instant and others take ~hold seconds), separate control plane from data plane, and diagnose which of the two a given failure broke.
+in_scope_subtopics:
+- AS numbers and eBGP over TCP/179
+- FSM Idle→Established
+- keepalive/hold timers and fast-fallover
+- UPDATE advertise/withdraw and NLRI
+- routing table sources (C/S/B) and longest-prefix match
+- best-path/ECMP and per-flow hashing
+- the bgpd→zebra→fpmsyncd→APPL_DB→ASIC route path
+- the four BGP message types and their counters
+- control-plane vs data-plane separation
+- the nine chaos options' blast radius and recovery.
+key_concepts:
+- eBGP is a negotiated TCP/179 session between two autonomous systems that only exchanges routes once its FSM reaches Established.
+- A session proves liveness with keepalives and dies if it hears nothing for the hold time; in this lab those are 3 s and 10 s.
+- Advertise and receive are independent directions — you control what you announce, your peer controls what you learn.
+- All route sources feed one table, and longest-prefix match — not the source protocol — decides which entry forwards a packet.
+- Equal-cost paths are installed together as ECMP, and forwarding hashes each flow onto one next-hop for consistency plus redundancy.
+- A BGP route reaches hardware via fpmsyncd writing APPL_DB ROUTE_TABLE, then the same orchagent→ASIC_DB→syncd pipeline as any other object.
+- Link carrier loss with fast-fallover drops a session immediately, but a silent peer (link up, packets stopped) is only detected at hold-timer expiry.
+- The four message types — OPEN, UPDATE, KEEPALIVE, NOTIFICATION — are the whole protocol, and their counters narrate the session.
+- BGP is control plane only; the chip's programmed routes are the data plane, so the two can fail — and be diagnosed — independently.
+- '"Is BGP Established?" and "does the ping work?" are different questions, and the interesting failures make them disagree.'
+command_field_meanings:
+  show bgp summary:
+    meaning: 'router-id and local AS on top; per-neighbor rows: Neighbor (peer IP), V (version 4), AS (peer AS), MsgRcvd/MsgSent, TblVer, InQ/OutQ, Up/Down (uptime, or how long down), **State/PfxRcd** (a number = Established with that many prefixes; a word = not up).'
+  show bgp neighbors <ip>:
+    meaning: 'deep session detail: BGP state and uptime; negotiated **hold time** and **keepalive interval**; capabilities; a **message-statistics** block (Opens/Notifications/Updates/Keepalives, sent vs rcvd); local/foreign host:port; accepted-prefix count; last-reset reason.'
+  show bgp neighbors <ip> advertised-routes | received-routes | routes:
+    meaning: prefixes sent to / received from / accepted from that neighbor.
+  show ip route [<prefix>]:
+    meaning: 'routing table with a legend (K/C/S/B/…); per entry: source code, prefix, next-hop(s), interface, `>` selected / `*` FIB; a prefix argument isolates one entry (and shows multiple next-hops for ECMP).'
+  vtysh -c "show ip bgp <prefix>":
+    meaning: 'FRR''s BGP view of a prefix: candidate paths, best-path and **multipath** markings, next-hops, attributes.'
+  show ip interfaces:
+    meaning: L3 addresses per interface with Admin/Oper (confirm the /31s are up).
+  config bgp shutdown|startup neighbor <ip>:
+    meaning: administratively drop/restore a session (or all) without touching the link; shows as `Idle (Admin)`.
+  config interface shutdown|startup <port[,port]>:
+    meaning: admin down/up one or more links (triggers fast-fallover on the session).
+  vtysh -c "clear ip bgp *":
+    meaning: hard-reset sessions (FSM restart, uptime resets); `… * soft` re-processes routes without dropping sessions.
+  sonic-db-cli APPL_DB keys "ROUTE_TABLE:<prefix>":
+    meaning: the fpmsyncd-written route entry; **ASIC_DB** `SAI_OBJECT_TYPE_NEXT_HOP_GROUP` — the ECMP group at chip level.
+  ping -c N <ip>:
+    meaning: the data-plane truth; loss/rtt are data even on non-zero exit.
+healthy_state_expectations: '- `show bgp summary`: local AS 65001; neighbors 10.0.12.1 and 10.0.12.3, both remote AS 65002, both Established, each with ≥1 prefix received.
+
+  - `show bgp neighbors 10.0.12.1`: hold time ≈10 s, keepalive ≈3 s; Keepalive counters climbing; Notifications 0.
+
+  - Advertise 10.0.1.0/24 to each neighbor; receive 10.0.2.0/24 from each.
+
+  - `show ip route 10.0.2.0/24`: source B, **two** next-hops (10.0.12.1 via Ethernet0, 10.0.12.3 via Ethernet4); the /31s are connected (C).
+
+  - Route visible in FRR, in APPL_DB ROUTE_TABLE, and as an ASIC next-hop-group `[VERIFY-ON-LAB: key formats]`.
+
+  - h1→10.0.2.10: 0% loss.'
+expected_chaos_effects:
+  c_shut_one_link: session on Ethernet0 down within ~1 s (fast-fallover); route →1 next-hop; ≤ a few packets lost `[VERIFY-ON-LAB]`; recovery in ~3–6 s after startup.
+  c_shut_both_links: both down within ~1 s; route withdrawn; 100% loss; recovery in ~3–6 s after startup.
+  c_bgp_admin_shut: 10.0.12.1 → Idle (Admin) immediately; link stays UP; route →1 next-hop; recovery seconds after startup neighbor.
+  c_hold_timer_blackhole: 'session reads Established for ~10 s then drops at hold expiry; flows hashed to that link black-holed for the window; route →1 next-hop after expiry `[VERIFY-ON-LAB: expiry ≈ hold]`.'
+  c_withdraw_only: sessions stay Established; 10.0.2.0/24 disappears; 100% loss; recovery seconds after re-originate.
+  c_wrong_asn: 10.0.12.1 never reaches Established (Bad Peer AS, flapping); route →1 next-hop; recovery once AS corrected.
+  c_clear_bgp: both uptimes reset to ~0; brief churn/loss; reconverge in a few seconds; soft variant does NOT reset uptime.
+  c_stop_bgp_service: bgp container gone; sessions drop; data plane may persist `[VERIFY-ON-LAB]`; recovery on start + fpmsyncd re-sync.
+  c_link_flap: uptime for 10.0.12.1 oscillates; OPEN/NOTIFICATION counters climb; repeated brief loss; no dampening.
+common_misconceptions:
+- misconception: BGP forwards the packets.
+  why_wrong: BGP is control plane; it only computes routes handed to the chip, which forwards.
+  correct_model: Session up and ping working are separate facts.
+- misconception: Advertised and received routes are the same list.
+  why_wrong: They are independent directions with independent policy.
+  correct_model: Always ask "which direction?" — advertise is what I send, receive is what I get.
+- misconception: A down link and a silent peer fail the same way.
+  why_wrong: Carrier loss triggers immediate fast-fallover; a silent peer waits out the hold timer (~10 s).
+  correct_model: Detection timing depends on whether the physical link signals the failure.
+- misconception: If the session is Established, traffic must flow.
+  why_wrong: A withdraw or a data-path fault breaks forwarding with the session still up.
+  correct_model: Established means "we're talking," not "the route exists and works."
+- misconception: ECMP picks one link and keeps the other idle.
+  why_wrong: Both are installed; forwarding hashes flows across both.
+  correct_model: ECMP is active/active per-flow, not active/standby.
+- misconception: BGP chooses paths per packet.
+  why_wrong: It selects routes; the data plane hashes per *flow* to avoid reordering.
+  correct_model: Path selection (control) and per-flow hashing (data) are different layers.
+- misconception: Killing bgpd instantly drops all traffic.
+  why_wrong: The chip keeps programmed routes, so forwarding can persist briefly.
+  correct_model: Control-plane death ≠ immediate data-plane death.
+- misconception: The routing table only holds BGP routes.
+  why_wrong: It merges connected, static, and BGP; longest-prefix match arbitrates.
+  correct_model: BGP is one source among several feeding one table.
+- misconception: Higher/longer prefixes are worse routes.
+  why_wrong: Longest-prefix match prefers the *most specific* route.
+  correct_model: A /32 beats a /24 for a contained address, by design.
+out_of_scope:
+- iBGP
+- route reflectors/confederations
+- communities
+- complex route-maps/policy beyond one withdraw
+- BGP path-attribute tie-breaking depth
+- BFD internals
+- IPv6/EVPN
+- graceful-restart deep mechanics
+- MTU effects (Lesson 4)
+- L2 forwarding (Lesson 1)
+redirect_line: That's interesting but outside this lesson's scope — eBGP peering, routes, ECMP, and reconvergence on leaf1/leaf2. I'd recommend reading it up separately (the FRR BGP docs or RFC 4271 are the right sources). Let's return to the session in front of us — pick a suggested question or run another on-topic command.
+source_urls:
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#bgp
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#ip--ipv6
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#interfaces
+- https://github.com/sonic-net/SONiC/wiki/Architecture
+- https://docs.frrouting.org/en/latest/bgp.html

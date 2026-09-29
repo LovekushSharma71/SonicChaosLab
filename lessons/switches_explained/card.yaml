@@ -1,0 +1,121 @@
+objective: The learner can explain how an Ethernet switch decides where a frame goes (VLAN membership + MAC-table lookup, with flooding as the miss path), can read that machinery live on SONiC (`show interfaces status / vlan / mac / lldp / arp` and the Redis tables beneath them), and can reason about the difference between intent (admin, config) and reality (operational status, learned state) when a failure is injected.
+in_scope_subtopics:
+- Port/link state (admin vs operational)
+- frames and MAC addresses
+- VLANs and access ports
+- broadcast domains
+- MAC learning/flooding/aging
+- LLDP discovery and TTL ageout
+- ARP and default gateway (only as needed for the ping choreography and the L2/L3 boundary)
+- interface counters (RX/TX/drops, poll-based freshness)
+- APPL_DB and ASIC_DB as live-state stores
+- '`sonic-db-cli` reads'
+- effects and recovery of the eight chaos options.
+key_concepts:
+- A switch forwards frames by looking up (VLAN, destination MAC) in a table it builds purely by recording the source MAC and arrival port of every frame it sees.
+- 'A lookup miss is not an error: the frame floods to all ports in the VLAN, and the destination''s reply immediately teaches the switch the missing entry.'
+- Admin status is a request written in config; operational status is the achieved reality — a port that is admin-down can never be operationally up, while admin-up guarantees nothing.
+- A VLAN is a numbered partition of the switch, an access port belongs to exactly one VLAN with the host unaware, and a VLAN is precisely one broadcast domain.
+- Dynamic MAC entries are leases refreshed by traffic and evicted after the aging time, so stale claims self-destruct and hosts can move.
+- 'A wrong MAC entry is worse than a missing one: missing floods and self-heals, wrong forwards into a silent blackhole.'
+- LLDP is periodic link-local self-introduction with a TTL lease — it observes the topology but never carries or influences user traffic.
+- Hosts sending to another subnet address the *frame* to their default gateway's MAC (resolved via ARP), so the far host's MAC never appears in the local L2 domain.
+- 'On SONiC every table the CLI shows is rows in Redis: APPL_DB holds service-produced state (e.g., LLDP_ENTRY_TABLE), ASIC_DB holds the chip-level objects (e.g., learned FDB entries), CONFIG_DB holds intent.'
+- 'Counters are monotonic and polled: read twice, subtract, and treat a moving drop/error bucket as the loudest signal a status table will never give you.'
+command_field_meanings:
+  show interfaces status:
+    meaning: 'one row per port. Interface: SONiC port name. Lanes: internal chip lane IDs (ignore on vs). Speed: configured/negotiated rate. MTU: max frame payload size the port accepts (baseline 9100 here). Alias: alternate naming (platform-dependent). Oper: actual link state (up/down). Admin: configured intent (up/down). Type/Asym PFC: media/QoS details, out of scope.'
+  show lldp table:
+    meaning: 'summary of the neighbor card-file. LocalPort: where the announcement arrived. RemoteDevice: neighbor''s advertised hostname. RemotePortID: which of the *neighbor''s* ports faces us. Capability: letter codes — R router, B bridge/switch, O other. RemotePortDescr: neighbor''s free-text port description. Trailing line: total entry count.'
+  show lldp neighbors <port>:
+    meaning: 'one card in detail: ChassisID (neighbor''s MAC-based identity), SysName, SysDescr (OS/version string), TTL (seconds the entry may be trusted without refresh), MgmtIP if advertised, capability flags, PortID/PortDescr.'
+  show vlan brief:
+    meaning: 'per VLAN: VLAN ID; IP Address if a VLAN interface owns one (10.0.1.1/24 on Vlan10 = h1''s gateway); Ports: members; Port Tagging: untagged (access-style) or tagged; DHCP Helper / Proxy ARP: unused here (expect empty/disabled).'
+  show vlan config:
+    meaning: 'same membership as flat rows: Name (VlanNN), VID (number), Member (port), Mode (untagged/tagged).'
+  show mac:
+    meaning: 'the FDB. No.: row index. Vlan: VLAN the entry lives in. MacAddress: the learned/pinned MAC. Port: exit port for frames *to* that MAC. Type: Dynamic (learned, ages out) or Static (operator-pinned, never ages). Footer: total count. `show mac -c`: count only.'
+  show mac aging-time:
+    meaning: single line stating the aging period in seconds for dynamic entries.
+  show arp:
+    meaning: 'the switch''s own IP→MAC resolutions (it needs them because its VLAN interface makes it a traffic *sender*). Address: neighbor IP. MacAddress: resolved MAC. Iface: port/VLAN the neighbor was seen on. Vlan: VLAN ID when applicable.'
+  show ip interfaces:
+    meaning: L3 addresses owned by the switch per interface, with Admin/Oper — the only table that betrays chaos option 5.
+  show interfaces counters:
+    meaning: 'per port: STATE (U=up, D=down, X=disabled); RX_OK/TX_OK: good frames in/out; RX_BPS/TX_BPS + UTIL: rates (may read N/A between polls on vs); RX_ERR/TX_ERR: damaged frames; RX_DRP/TX_DRP: healthy frames discarded; RX_OVR/TX_OVR: overruns. `sonic-clear counters` zeroes the *user''s* view only.'
+  sonic-db-cli <DB> keys "<pat>":
+    meaning: lists keys matching the glob in that logical DB; an empty result means zero matching rows, not an error. `hgetall "<key>"` dumps one row as field/value pairs.
+  ping -c N <ip>:
+    meaning: N probes; read transmitted, received, % loss, and rtt min/avg/max. Non-zero exit with partial loss is data, not tool failure.
+  ip neigh show:
+    meaning: 'the host''s ARP cache: IP, device, MAC (`lladdr`), and a state word (REACHABLE/STALE/etc. — treat anything with a MAC as "resolved").'
+healthy_state_expectations: '- Ethernet0, Ethernet4, Ethernet8 on leaf1: Oper up, Admin up, MTU 9100.
+
+  - `show vlan brief`: exactly VLAN 10, IP 10.0.1.1/24, member Ethernet8, untagged.
+
+  - `show lldp table`: leaf2 visible twice (via Ethernet0 and Ethernet4) with its port IDs; typically no entry for Ethernet8 (h1 doesn''t speak LLDP); entry count ≥2.
+
+  - `show mac` after any h1 ping: at least one Dynamic entry — 02:00:00:00:01:10, Vlan 10, Ethernet8. Before any traffic (or after aging), the table may legitimately be empty.
+
+  - `show mac aging-time`: a positive number of seconds `[VERIFY-ON-LAB: capture the default and pin it in this card]`.
+
+  - Redis: ASIC_DB has ≥1 SAI_OBJECT_TYPE_FDB_ENTRY key after a ping; APPL_DB has ≥2 LLDP_ENTRY_TABLE keys; APPL_DB FDB_TABLE expected empty on vs `[VERIFY-ON-LAB]`.
+
+  - h1→10.0.1.1 and h1→10.0.2.10: 0% loss, sub-10 ms rtt typical for containers `[VERIFY-ON-LAB: typical rtt]`.
+
+  - Counters: RX_OK/TX_OK on Ethernet8 increase by roughly the ping count (± poll lag); RX_DRP/RX_ERR flat at ~0.'
+expected_chaos_effects:
+  c_shut_access: 'Admin+Oper down on Ethernet8 within ~1–2 s of inject; both pings 100% loss immediately; FDB entry for h1 gone `[VERIFY-ON-LAB: immediate flush vs aging]`; everything else static. Recovery: Oper up within ~1–5 s of startup `[VERIFY-ON-LAB]`, first post-recovery ping succeeds (it re-ARPs and re-teaches the FDB in the same round trip).'
+  c_clear_fdb: 'count→0 instantly; ping loss ≈0 (at most the first probe) `[VERIFY-ON-LAB]`; relearn occurs on the first frame after flush — recovery time ≈ one ping interval. The correct "explanation" emphasizes the non-event: flooding absorbed the failure.'
+  c_vlan_member_del: 'loss 100% starting within ~1 s; port status stays perfect — the diff''s most interesting row is the *unchanged* interface_status next to the vanished membership; no relearn while injected. Recovery: membership re-add restores forwarding on the next ARP (~1 s).'
+  c_wrong_vlan: loss 100%; MAC *is* learned but with vlan=50 — explanation must connect "entry exists" with "wrong broadcast domain, gateway unreachable"; recovery like option 3.
+  c_gw_ip_remove: 'L2 facts all healthy; gateway ping fails immediately — with a warm h1 ARP cache the echoes go out and die unanswered (timeouts), with a cold cache ARP itself fails ("Destination Host Unreachable") `[VERIFY-ON-LAB: confirm both signatures]`; h1→h2 fails identically (no escape from Vlan10). Recovery: re-adding the IP restores replies on the next ARP exchange (seconds).'
+  c_lldp_stop: 'zero data-plane change (both pings 0% loss throughout — say so explicitly); leaf1''s neighbor table empties `[VERIFY-ON-LAB: on stop or on TTL]`; peer-side entries persist ~TTL (≈120 s). Recovery: entries return within ~30 s (announcement interval) of re-enable.'
+  c_mac_flap: 'FDB entry for Ethernet8 changes identity across reads; ~1 lost ping per flap; old identities linger until aging `[VERIFY-ON-LAB: replace vs accumulate on vs]`. No recovery measurement — restore just pins the original MAC back.'
+  c_static_mac_wrong_port: if consumed, a Static row appears pointing h1's MAC at Ethernet0; gateway→h1 replies exit the wrong port so ping shows 100% loss while *nothing else changes at all* — the purest "up but broken" in the lesson. If no Static row appears, report "injection ineffective on vs" (known limitation), not a network conclusion.
+common_misconceptions:
+- misconception: Switches forward using IP addresses.
+  why_wrong: The FDB keys on (VLAN, MAC); IP never enters the lookup.
+  correct_model: 'Switches are L2: MAC in, MAC out; IP is the router''s business (Lesson 3).'
+- misconception: Admin up means the link works.
+  why_wrong: Admin is written intent; a dead peer or host-side down leaves Oper down while Admin reads up.
+  correct_model: Both must be up, and only the operational status reflects reality — always read the pair.
+- misconception: Someone has to configure the MAC table.
+  why_wrong: It is populated exclusively by learning from source MACs; clearing it is routine and near-harmless.
+  correct_model: It's a self-building cache; `sonic-clear fdb all` costs at most one flooded round trip.
+- misconception: Flooding means something is broken (a broadcast storm).
+  why_wrong: Unknown-unicast flooding is the designed miss-path and self-terminates via learning; storms require forwarding loops, which this loop-free topology cannot form.
+  correct_model: Flooding is normal and momentary; storms are a different pathology, out of scope here.
+- misconception: Clearing the FDB causes an outage.
+  why_wrong: The very next frame floods and the reply relearns; measured loss is ≈0.
+  correct_model: The FDB is disposable state, and chaos option B proves it live.
+- misconception: VLANs need separate physical switches or cables.
+  why_wrong: VLANs are logical partitions enforced at ingress/egress on one box.
+  correct_model: One switch hosts many isolated broadcast domains; membership config is the only wall.
+- misconception: If the switch learned the host's MAC, connectivity must be fine.
+  why_wrong: Learning happens per-VLAN; an entry in the wrong VLAN (option 4) coexists with 100% loss.
+  correct_model: An FDB entry is evidence, never proof — check membership and the gateway too.
+- misconception: LLDP down = network down.
+  why_wrong: LLDP is observation only; option 6 shows 0% loss with LLDP dead.
+  correct_model: Losing LLDP blinds discovery, not forwarding.
+- misconception: The default gateway is some external router box.
+  why_wrong: Here the gateway is the switch's own VLAN interface (10.0.1.1 on Vlan10).
+  correct_model: One SONiC box is both the L2 switch and the L3 gateway — the boundary runs through the device, not between devices.
+out_of_scope:
+- Spanning tree/loop prevention
+- trunking design
+- QoS/buffers
+- IPv6
+- BGP/routing internals (Lesson 3)
+- the config pipeline and orchagent/syncd (Lesson 2)
+- MTU failures (Lesson 4)
+- SONiC installation/platform bring-up
+- hardware ASIC specifics
+redirect_line: That's a great question, but it sits outside this lesson's Layer-2 scope — I'd genuinely recommend reading up on it separately (the SONiC wiki's Architecture page or any Ethernet-switching primer will treat it properly). Let's steer back to what leaf1 is showing us — pick one of the suggested questions or run another on-topic command.
+source_urls:
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#interfaces
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#vlan--fdb
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#lldp
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#arp--ndp
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#feature
+- https://github.com/sonic-net/SONiC/wiki/Architecture

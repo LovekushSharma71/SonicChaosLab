@@ -1,0 +1,397 @@
+id: bgp_reconvergence
+title: 'BGP in SONiC: peering & reconvergence'
+difficulty: core
+requires:
+- switches_explained
+- inside_sonic
+teach_file: ./teach.md
+card_file: ./card.yaml
+steps:
+- id: t_peering
+  kind: teach
+  title: 'S1: Two routers agree to talk — eBGP over TCP'
+  optional: false
+- id: o_peering
+  kind: observe
+  title: 'S1: Session state, ASNs, prefix counts, uptime'
+  optional: false
+- id: q_peering
+  kind: qna
+  title: 'S1: Questions — peering & the FSM'
+  optional: false
+- id: t_advertise
+  kind: teach
+  title: 'S2: What I tell you vs what you tell me'
+  optional: true
+- id: o_advertise
+  kind: observe
+  title: 'S2: Advertised-routes vs received-routes per neighbor'
+  optional: true
+- id: q_advertise
+  kind: qna
+  title: 'S2: Questions — advertisement'
+  optional: true
+- id: t_routes
+  kind: teach
+  title: 'S3: The routing table — sources, selection, longest-prefix match'
+  optional: false
+- id: o_routes
+  kind: observe
+  title: 'S3: Connected vs BGP routes; the 10.0.2.0/24 entry dissected'
+  optional: false
+- id: q_routes
+  kind: qna
+  title: 'S3: Questions — the route table'
+  optional: false
+- id: t_ecmp
+  kind: teach
+  title: 'S4: Two roads, same cost — ECMP'
+  optional: false
+- id: o_ecmp
+  kind: observe
+  title: 'S4: One prefix, two next-hops'
+  optional: false
+- id: q_ecmp
+  kind: qna
+  title: 'S4: Questions — ECMP'
+  optional: false
+- id: t_journey
+  kind: teach
+  title: 'S5: A route''s journey — bgpd to zebra to fpmsyncd to APPL_DB to ASIC'
+  optional: true
+- id: o_journey
+  kind: observe
+  title: 'S5: The same route in FRR, APPL_DB, and ASIC_DB'
+  optional: true
+- id: q_journey
+  kind: qna
+  title: 'S5: Questions — the route pipeline'
+  optional: true
+- id: t_timers
+  kind: teach
+  title: 'S6: Heartbeats and deadlines — keepalive, hold, fast-fallover'
+  optional: true
+- id: o_timers
+  kind: observe
+  title: 'S6: Negotiated timers on the live session'
+  optional: true
+- id: q_timers
+  kind: qna
+  title: 'S6: Questions — timers'
+  optional: true
+- id: t_messages
+  kind: teach
+  title: 'S7: The four BGP message types, counted'
+  optional: true
+- id: o_messages
+  kind: observe
+  title: 'S7: Opens, Updates, Keepalives, Notifications'
+  optional: true
+- id: q_messages
+  kind: qna
+  title: 'S7: Questions — messages'
+  optional: true
+- id: t_dataplane
+  kind: teach
+  title: 'S8: Control plane decides, data plane carries'
+  optional: true
+- id: o_dataplane
+  kind: observe
+  title: 'S8: h1 reaches h2 while both links carry traffic'
+  optional: true
+- id: q_dataplane
+  kind: qna
+  title: 'S8: Questions — control vs data plane'
+  optional: true
+- id: chaos
+  kind: chaos_select
+  title: Pick one failure to inject (9 options)
+  optional: false
+- id: restore
+  kind: restore
+  title: Heal the lab, verify reconvergence
+  optional: false
+commands:
+  baseline:
+  - 'leaf1: show bgp summary'
+  - 'leaf1: show ip interfaces'
+  after_chaos:
+  - 'leaf1: show bgp summary'
+  - 'leaf1: show ip route 10.0.2.0/24'
+  - 'leaf1: show interfaces status'
+  - 'leaf1: sonic-db-cli APPL_DB keys "ROUTE_TABLE:10.0.2.0/24"'
+  - 'h1: ping -c 10 10.0.2.10'
+  - 'leaf2: show bgp summary'
+  per_step:
+    o_peering:
+    - 'leaf1: show bgp summary'
+    - 'leaf1: show ip interfaces'
+    o_advertise:
+    - 'leaf1: show bgp neighbors 10.0.12.1 advertised-routes'
+    - 'leaf1: show bgp neighbors 10.0.12.1 received-routes'
+    - 'leaf1: show bgp neighbors 10.0.12.3 received-routes'
+    o_routes:
+    - 'leaf1: show ip route'
+    - 'leaf1: show ip route 10.0.2.0/24'
+    o_ecmp:
+    - 'leaf1: show ip route 10.0.2.0/24'
+    - 'leaf1: vtysh -c "show ip bgp 10.0.2.0/24"'
+    o_journey:
+    - 'leaf1: vtysh -c "show ip route 10.0.2.0/24"'
+    - 'leaf1: sonic-db-cli APPL_DB keys "ROUTE_TABLE:10.0.2.0/24"'
+    - 'leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_NEXT_HOP_GROUP*"'
+    o_timers:
+    - 'leaf1: show bgp neighbors 10.0.12.1'
+    o_messages:
+    - 'leaf1: show bgp neighbors 10.0.12.1'
+    o_dataplane:
+    - 'h1: ping -c 5 10.0.2.10'
+    - 'leaf1: show bgp summary'
+    - 'leaf1: show ip route 10.0.2.0/24'
+  vocabulary:
+  - show bgp*
+  - show ip bgp*
+  - show ip route*
+  - show ip interfaces*
+  - show interfaces status*
+  - show interfaces counters*
+  - vtysh*
+  - config bgp shutdown*
+  - config bgp startup*
+  - config interface shutdown*
+  - config interface startup*
+  - sonic-db-cli APPL_DB *
+  - sonic-db-cli ASIC_DB *
+  - sonic-db-cli STATE_DB *
+  - sonic-db-cli CONFIG_DB *
+  - redis-cli *
+  - ping*
+  - ip route*
+  - ip neigh*
+chaos_options:
+- id: c_shut_one_link
+  label: 'Cut one of two roads: shut a single inter-switch link'
+  type: link
+  inject:
+  - 'leaf1: sudo config interface shutdown Ethernet0'
+  restore:
+  - 'leaf1: sudo config interface startup Ethernet0'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - 'With fast-fallover, the session over Ethernet0 (neighbor 10.0.12.1) drops within a second — no hold-time wait. ECMP for 10.0.2.0/24 collapses from two next-hops to one (via 10.0.12.3); the route survives, traffic reroutes to the surviving link. Expect near-zero data loss — a handful of packets at most during reconvergence `[VERIFY-ON-LAB: loss window on vs]`. `show bgp summary` shows one neighbor Idle/Active, one still Established. Recovery: link up → session re-establishes in a few seconds → route returns to two next-hops.'
+  risk: low
+  enabled: true
+  plan_b: carrier loss on the veth from the container host would be a truer "cable pull," but host-side actions are out of scope; the admin shutdown is the sanctioned equivalent and still triggers fast-fallover.
+- id: c_shut_both_links
+  label: 'Total isolation: cut both roads'
+  type: link
+  inject:
+  - 'leaf1: sudo config interface shutdown Ethernet0,Ethernet4'
+  restore:
+  - 'leaf1: sudo config interface startup Ethernet0,Ethernet4'
+  - 'h1: ping -c 5 10.0.2.10'
+  expected_effects:
+  - 'Both sessions drop within ~1 s (fast-fallover). 10.0.2.0/24 loses *all* next-hops and is withdrawn from the table entirely; h1→h2 goes to 100% loss. The starkest control-plane→data-plane consequence: no route, no forwarding. Recovery: both links up → both sessions re-establish within a few seconds → route and ECMP fully return.'
+  risk: medium
+  enabled: true
+  plan_b: 'shut the two links on **leaf2** instead (`leaf2: sudo config interface shutdown Ethernet0,Ethernet4`) — identical effect from the peer''s side.'
+- id: c_bgp_admin_shut
+  label: 'Polite goodbye: administratively shut one neighbor'
+  type: config
+  inject:
+  - 'leaf1: sudo config bgp shutdown neighbor 10.0.12.1'
+  restore:
+  - 'leaf1: sudo config bgp startup neighbor 10.0.12.1'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - 'A NOTIFICATION tears down just that session; `show bgp summary` shows 10.0.12.1 as `Idle (Admin)`. The **link stays up** — the perfect control-vs-data contrast to option 1: same ECMP-halving effect on the route, but the physical interface is untouched and Ethernet0''s counters keep any non-BGP traffic. Route drops to one next-hop; minimal data loss. Recovery: `startup neighbor` re-establishes in a few seconds.'
+  risk: low
+  enabled: true
+  plan_b: '`leaf1: sudo config bgp shutdown all` / `startup all` — tears down *both* sessions administratively while both links stay up (contrast with option 2''s link-down total loss).'
+- id: c_hold_timer_blackhole
+  label: 'Silent peer: drop BGP packets, keep the link up'
+  type: config
+  inject:
+  - 'leaf1: iptables -A INPUT -p tcp --dport 179 -s 10.0.12.1 -j DROP'
+  - 'leaf1: iptables -A INPUT -p tcp --sport 179 -s 10.0.12.1 -j DROP'
+  restore:
+  - 'leaf1: iptables -D INPUT -p tcp --dport 179 -s 10.0.12.1 -j DROP'
+  - 'leaf1: iptables -D INPUT -p tcp --sport 179 -s 10.0.12.1 -j DROP'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - 'THE hold-timer demonstration. The link stays up and the session reads Established for the first several seconds because no carrier signal says otherwise — but keepalives from 10.0.12.1 no longer arrive. At **~10 s** (hold time) leaf1 declares the session dead with a "hold timer expired" NOTIFICATION and only *then* halves ECMP. If the flow was hashed onto that link, traffic is black-holed for the whole hold window while everything *looks* healthy — the operational nightmare this course exists to teach `[VERIFY-ON-LAB: exact expiry ≈ hold time; which flows are affected depends on hashing]`. Recovery: delete the rules; session re-establishes in seconds.'
+  risk: medium
+  enabled: true
+  plan_b: extend the silence to *both* directions by also dropping leaf1's **outbound** BGP (`iptables -A OUTPUT -p tcp --dport 179 -d 10.0.12.1 -j DROP` plus the matching `--sport 179` rule; remove with `-D` on restore) — then each side expires on its own hold clock, instead of only leaf1 as in the primary (which drops inbound only).
+- id: c_withdraw_only
+  label: 'Session up, route gone: withdraw the prefix'
+  type: config
+  inject:
+  - 'leaf2: vtysh -c "configure terminal" -c "router bgp 65002" -c "address-family ipv4 unicast" -c "no network 10.0.2.0/24"'
+  restore:
+  - 'leaf2: vtysh -c "configure terminal" -c "router bgp 65002" -c "address-family ipv4 unicast" -c "network 10.0.2.0/24"'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - 'The purest control-vs-data lesson. Both sessions stay perfectly Established (keepalives flow), but leaf2 sends an UPDATE **withdrawing** 10.0.2.0/24. leaf1 removes the route from its table; h1→h2 dies with `show bgp summary` looking flawless. "BGP is up" and "the route exists" are shown to be different facts. Recovery: re-originate; the UPDATE re-adds the prefix in seconds.'
+  risk: medium
+  enabled: false
+  plan_b: on leaf2, remove the Vlan20 IP so the *connected* origin of 10.0.2.0/24 disappears (blunter, also withdraws the prefix).
+- id: c_wrong_asn
+  label: 'Identity mismatch: wrong remote-AS'
+  type: config
+  inject:
+  - 'leaf1: vtysh -c "configure terminal" -c "router bgp 65001" -c "neighbor 10.0.12.1 remote-as 65099"'
+  restore:
+  - 'leaf1: vtysh -c "configure terminal" -c "router bgp 65001" -c "neighbor 10.0.12.1 remote-as 65002"'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - 'The OPEN handshake now fails: leaf1 expects AS 65099 but 10.0.12.1 identifies as 65002, so a NOTIFICATION ("Bad Peer AS") fires and the FSM cannot reach Established — it flaps Idle/Active/Connect. ECMP halves to the one good session. Teaches that peering requires *agreement*, checked at OPEN. Recovery: correct the AS; session climbs to Established.'
+  risk: medium
+  enabled: false
+  plan_b: edit `CONFIG_DB BGP_NEIGHBOR|10.0.12.1` asn and restart the bgp service (heavier, more deterministic than a live vtysh edit).
+- id: c_clear_bgp
+  label: 'Hard reset: clear all BGP sessions'
+  type: churn
+  inject:
+  - 'leaf1: vtysh -c "clear ip bgp *"'
+  restore:
+  - 'h1: ping -c 5 10.0.2.10'
+  - 'leaf1: show bgp summary'
+  expected_effects:
+  - 'Both sessions are forcibly torn down and rebuilt from Idle → OPEN → … → Established. Uptime in `show bgp summary` resets to near-zero (your reconvergence stopwatch). Brief route churn as prefixes re-advertise; short, small data loss during the rebuild `[VERIFY-ON-LAB: loss window]`. A clean way to watch the FSM climb live. Recovery is automatic within a few seconds.'
+  risk: low
+  enabled: true
+  plan_b: '`leaf1: vtysh -c "clear ip bgp * soft"` — a *soft* clear that re-processes routes **without** dropping the sessions (contrast: uptime does NOT reset, no FSM restart).'
+- id: c_stop_bgp_service
+  label: 'Kill the routing brain: stop the bgp container'
+  type: service
+  inject:
+  - 'leaf1: sudo systemctl stop bgp'
+  restore:
+  - 'leaf1: sudo systemctl start bgp'
+  - 'h1: ping -c 5 10.0.2.10'
+  expected_effects:
+  - 'bgpd, zebra, and fpmsyncd all die. Sessions drop (leaf2 will time out its side at hold). The revealing question: does h1→h2 keep working? If the chip retains its programmed routes, forwarding may persist even with the whole routing brain gone — control plane dead, data plane alive `[VERIFY-ON-LAB: whether ROUTE_TABLE/ASIC route lingers and for how long]`. Recovery: start bgp → sessions re-establish → fpmsyncd re-syncs routes into APPL_DB.'
+  risk: medium
+  enabled: true
+  plan_b: '`leaf1: docker exec bgp supervisorctl stop bgpd` — kill only bgpd while zebra/fpmsyncd live (subtler: existing routes may persist in zebra→APPL_DB longer).'
+- id: c_link_flap
+  label: The flapping link
+  type: churn
+  inject:
+  - 'leaf1: sh -c ''for i in 1 2 3 4 5; do sudo config interface shutdown Ethernet0; sleep 2; sudo config interface startup Ethernet0; sleep 5; done'''
+  restore:
+  - 'leaf1: sudo config interface startup Ethernet0'
+  - 'h1: ping -c 5 10.0.2.10'
+  expected_effects:
+  - 'Ethernet0''s session repeatedly drops and re-establishes; ECMP oscillates between one and two next-hops; message counters (OPEN/NOTIFICATION) climb with each cycle; brief repeated loss for flows hashed onto that link. FRR applies no route dampening by default, so every flap fully reconverges — teaches both resilience and the churn cost of an unstable link. Recovery: ensure the final state is up.'
+  risk: medium
+  enabled: false
+  plan_b: flap the *session* instead of the link — loop `vtysh -c "clear ip bgp 10.0.12.1"` — churn without touching the interface.
+observe:
+  facts:
+  - bgp_neighbors
+  - route_count
+  - ping_loss
+  - redis_keys
+  measure_recovery: true
+qna:
+  scope_keywords:
+  - bgp
+  - ebgp
+  - ibgp
+  - peer
+  - peering
+  - neighbor
+  - session
+  - tcp 179
+  - autonomous system
+  - asn
+  - fsm
+  - state machine
+  - idle
+  - active
+  - established
+  - keepalive
+  - hold time
+  - hold timer
+  - timer
+  - fast fallover
+  - fallover
+  - advertise
+  - advertised
+  - receive
+  - received
+  - update
+  - withdraw
+  - nlri
+  - prefix
+  - route
+  - routing
+  - routing table
+  - rib
+  - fib
+  - next-hop
+  - nexthop
+  - longest prefix match
+  - lpm
+  - connected route
+  - static route
+  - best path
+  - bestpath
+  - ecmp
+  - multipath
+  - equal cost
+  - load balance
+  - hashing
+  - flow
+  - next-hop group
+  - open
+  - notification
+  - message
+  - control plane
+  - data plane
+  - reconverge
+  - reconvergence
+  - bgpd
+  - zebra
+  - fpmsyncd
+  - vtysh
+  - frr
+  - route_table
+  suggested_questions:
+    q_peering:
+    - What does "Established" mean in `show bgp summary`, and how do I tell at a glance?
+    - Why do leaf1 and leaf2 have different AS numbers, and what makes this eBGP?
+    - What are the two neighbors leaf1 has, and why two?
+    q_advertise:
+    - What's the difference between advertised-routes and received-routes?
+    - Which prefix does leaf1 advertise, and which does it receive?
+    - Why does leaf1 receive 10.0.2.0/24 over both links?
+    q_routes:
+    - How does the router pick between 10.0.1.0/24 and 10.0.2.0/24 for a packet to h2?
+    - What do the C and B source codes mean in `show ip route`?
+    - Why is 10.0.2.0/24 a BGP route while 10.0.12.0/31 is connected?
+    q_ecmp:
+    - Why does 10.0.2.0/24 have two next-hops instead of one?
+    - Does ECMP use both links at once or keep one as backup?
+    - How does the switch decide which link a given flow takes?
+    q_journey:
+    - Trace 10.0.2.0/24 from bgpd all the way to the chip.
+    - What does fpmsyncd do, and why is it the on-ramp to the SONiC pipeline?
+    - How is a route's path to hardware different from a VLAN's (Lesson 2)?
+    q_timers:
+    - What are keepalive and hold time, and what are they in this lab?
+    - Why does a silent peer take ~10 s to detect but a dead link is instant?
+    - What is fast-fallover, and when does it help?
+    q_messages:
+    - What are the four BGP message types and what does each do?
+    - Which message tears a session down, and how would I see it?
+    - What do rising KEEPALIVE counts versus a jump in UPDATEs tell you?
+    q_dataplane:
+    - What's the difference between the control plane and the data plane here?
+    - Why might h1→h2 keep working after you stop the bgp container?
+    - How can the session be Established while the ping fails?
+meta:
+  verified_on: UNVERIFIED — docker-sonic-vs:202405
+  card_version: 1

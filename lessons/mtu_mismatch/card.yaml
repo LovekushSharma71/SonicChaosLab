@@ -1,0 +1,97 @@
+objective: The learner can define MTU and path MTU, prove a jumbo path with a DF size sweep, locate the `mtu` field across CONFIG_DB/APPL_DB/kernel, explain fragmentation and the DF bit and PMTUD (and how dropping ICMP frag-needed creates a blackhole), reason about ECMP×MTU intermittency, apply a systematic "up but broken" detection checklist, and explain why a TCP control session (BGP) survives an MTU fault (MSS) that kills bulk data.
+in_scope_subtopics:
+- MTU/jumbo/path-MTU
+- DF-ping size sweep and payload+28 arithmetic
+- PORT.mtu through the pipeline to the netdev
+- fragmentation, the DF bit, PMTUD, ICMP fragmentation-needed
+- ECMP×MTU per-flow intermittency
+- the detection checklist
+- TCP MSS and why BGP survives
+- the seven chaos options' signatures and recovery.
+key_concepts:
+- MTU is the largest packet a link will carry, it is per-link, and a path is only as wide as its narrowest hop.
+- Oversized packets are either fragmented (DF unset) or dropped (DF set), so MTU faults can be completely silent to the sender.
+- 'A DF size sweep is the only reliable test of true path MTU: small passes and large fails is the signature of an MTU fault.'
+- MTU is a plain field (`mtu`) that flows through CONFIG_DB→APPL_DB→ASIC and onto the Linux netdev, so a mismatch is one number out of agreement across a link.
+- PMTUD lets senders learn the right size from returned ICMP "fragmentation needed" messages — and fails silently if those messages are dropped.
+- ECMP plus a per-member MTU mismatch produces intermittent failure, because each flow's fate depends on which link it was hashed onto.
+- Status, routes, and sessions all stay healthy under an MTU fault, so only a DF probe reveals it and only the MTU column locates it.
+- TCP negotiates an MSS from local MTU and self-limits its segment size, so small-packet control sessions like BGP survive a fault that blackholes big data.
+- A source-local MTU error is loud (the sender refuses to transmit) while an in-network MTU drop is silent (the packet vanishes downstream).
+- '"The config pipeline betrayed" is literal: SONiC faithfully programs the wrong MTU you intended, and the fault exists precisely because the machinery worked.'
+command_field_meanings:
+  show interfaces status:
+    meaning: the **MTU** column is the star here (bytes, 9100 baseline); also Oper/Admin (stay up under an MTU fault), Speed, Alias.
+  ping -c N <ip>:
+    meaning: plain reachability (tiny packets). **`-s <payload>`** sets ICMP payload (packet = payload+28). **`-M do`** sets the DF bit (forbid fragmentation → oversize is dropped, not split). Read loss% and any "message too long"/"frag needed" text.
+  sonic-db-cli CONFIG_DB hget "PORT|<port>" mtu:
+    meaning: the configured MTU intent. **`APPL_DB hget "PORT_TABLE:<port>" mtu`** — the translated value. Together with the status column they show intent/appl/reality agreement.
+  config interface mtu <port> <value>:
+    meaning: write a new MTU (9100 baseline; 1500/1280 for faults). **`ip link set eth1 mtu <value>`** (host) — the host netdev MTU; **`ip link show eth1`** reads it.
+  show ip route 10.0.2.0/24:
+    meaning: 'reused for ECMP: two next-hops = both members in play (an MTU fault on one is per-flow).'
+  show bgp summary:
+    meaning: reused to prove the control plane stays Established under an MTU fault (MSS).
+  iptables … --icmp-type fragmentation-needed -j DROP:
+    meaning: suppresses PMTUD's feedback message to create a blackhole (chaos 7).
+healthy_state_expectations: '- Every port on both leafs: MTU 9100, Oper up, Admin up.
+
+  - h1→h2: plain ping 0% loss; `ping -M do -s 1472` 0% loss; `ping -M do -s 8972` 0% loss (the jumbo fabric proven end to end).
+
+  - Ethernet0 `mtu` = 9100 in CONFIG_DB, in APPL_DB PORT_TABLE, and in the status column — intent, application, reality agree.
+
+  - `show ip route 10.0.2.0/24`: two next-hops (both ECMP members at 9100).
+
+  - `show bgp summary`: both sessions Established.'
+expected_chaos_effects:
+  c_mtu1500_one_side: Ethernet0→1500; DF-8972 fails for flows hashed to Ethernet0 (direction/hash-dependent `[VERIFY-ON-LAB]`); everything else green; MTU column is the tell.
+  c_mtu1500_one_link: one ECMP path 1500 both ends; DF-8972 intermittent by hash; DF-1472 and BGP fine.
+  c_mtu1500_all_links: whole fabric 1500; DF-8972 fails deterministically; DF-1472/plain/BGP fine — cleanest demo.
+  c_host_mtu: h1 eth1→1500; DF-8972 fails *locally* ("message too long") before egress — loud, source-side.
+  c_access_port_mtu: 'Ethernet8→1500; DF-8972 fails at the first hop; fabric untouched `[VERIFY-ON-LAB: enforcement]`.'
+  c_tiny_mtu: fabric→1280; even DF-1472 fails; BGP should stay up via MSS `[VERIFY-ON-LAB]`.
+  c_pmtud_blackhole: fabric 1500 + frag-needed dropped; DF-8972 hangs with no ICMP feedback — silent blackhole; BGP up.
+common_misconceptions:
+- misconception: If ping works, MTU is fine.
+  why_wrong: Plain ping uses tiny packets that fit anything; only large DF packets test the ceiling.
+  correct_model: Prove size with `ping -M do -s 8972`, not plain ping.
+- misconception: An MTU-too-big packet just gets split and delivered.
+  why_wrong: Only if DF is unset; with DF it is dropped.
+  correct_model: The DF bit decides fragment-vs-drop; DF traffic (and PMTUD) meets the ceiling hard.
+- misconception: MTU is a property of the path.
+  why_wrong: It is per-link; the path MTU is the minimum across hops.
+  correct_model: One narrow hop bottlenecks an otherwise-jumbo path.
+- misconception: The link is up, so size can't be the problem.
+  why_wrong: Up/oper says nothing about size; MTU faults leave status perfect.
+  correct_model: Status lies about size — use a DF probe.
+- misconception: If BGP is Established, the data path must be fine.
+  why_wrong: BGP's small TCP segments (MSS) fit under the fault while bulk data doesn't.
+  correct_model: Control-plane health ≠ data-plane health, with MTU as the wedge.
+- misconception: Intermittent failure means flaky hardware.
+  why_wrong: ECMP hashing plus a per-member MTU mismatch makes success depend on which link a flow took.
+  correct_model: Suspect ECMP×MTU and probe repeatedly across flows.
+- misconception: PMTUD always saves you.
+  why_wrong: It depends on ICMP frag-needed getting back; drop it and large packets blackhole silently.
+  correct_model: PMTUD is only as reliable as the ICMP path; filtered ICMP breaks it.
+- misconception: Making every link 1500 fixes a mismatch.
+  why_wrong: Consistent 1500 works for ≤1500 traffic but forfeits jumbo; the fault was *disagreement*, not size.
+  correct_model: Match MTUs across the path; choose one value everywhere.
+- misconception: A failing big ping means the destination is down.
+  why_wrong: A source-local 'message too long' means *your* MTU is too small, not the peer's fault.
+  correct_model: 'Read the error: local refusal vs in-network silence point to different hops.'
+out_of_scope:
+- MSS clamping configuration
+- QoS/buffer tuning
+- IPv6 PMTUD specifics
+- TCP congestion control
+- tunnel (GRE/VXLAN) overhead math
+- jumbo throughput benchmarking
+- L2 forwarding internals (Lesson 1)
+- pipeline internals beyond locating the mtu field (Lesson 2)
+- BGP internals beyond the MSS point (Lesson 3)
+redirect_line: Good question, but it's outside this lesson's focus — MTU, fragmentation, and the 'up but broken' failure class on this fabric. I'd recommend reading it up separately (RFC 1191 on PMTUD, or a jumbo-frame primer). Let's get back to the size sweep on leaf1 — pick a suggested question or run another on-topic command.
+source_urls:
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#interfaces
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#ip--ipv6
+- https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#bgp
+- https://github.com/sonic-net/SONiC/wiki/Architecture

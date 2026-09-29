@@ -1,0 +1,390 @@
+id: inside_sonic
+title: 'Inside SONiC: from CLI to ASIC'
+difficulty: core
+requires:
+- switches_explained
+teach_file: ./teach.md
+card_file: ./card.yaml
+steps:
+- id: t_containers
+  kind: teach
+  title: 'S1: SONiC is a fleet of containers, not a monolith'
+  optional: false
+- id: o_containers
+  kind: observe
+  title: 'S1: The fleet, live'
+  optional: false
+- id: q_containers
+  kind: qna
+  title: 'S1: Questions — containers & roles'
+  optional: false
+- id: t_configdb
+  kind: teach
+  title: 'S2: CONFIG_DB — the book of intent'
+  optional: false
+- id: o_configdb
+  kind: observe
+  title: 'S2: Read your own intent'
+  optional: false
+- id: q_configdb
+  kind: qna
+  title: 'S2: Questions — CONFIG_DB'
+  optional: false
+- id: t_pipeline
+  kind: teach
+  title: 'S3: One change, four databases — the full pipeline'
+  optional: false
+- id: o_pipeline
+  kind: observe
+  title: 'S3: Create Vlan30, watch it fall through the databases, delete it'
+  optional: false
+- id: q_pipeline
+  kind: qna
+  title: 'S3: Questions — pipeline & propagation'
+  optional: false
+- id: t_statedb
+  kind: teach
+  title: 'S4: STATE_DB — what actually happened'
+  optional: true
+- id: o_statedb
+  kind: observe
+  title: 'S4: Configured vs actual port state'
+  optional: true
+- id: q_statedb
+  kind: qna
+  title: 'S4: Questions — STATE_DB'
+  optional: true
+- id: t_asicdb
+  kind: teach
+  title: 'S5: ASIC_DB and SAI — the machine language of switching'
+  optional: true
+- id: o_asicdb
+  kind: observe
+  title: 'S5: SAI objects and the VID-to-RID map'
+  optional: true
+- id: q_asicdb
+  kind: qna
+  title: 'S5: Questions — ASIC_DB & SAI'
+  optional: true
+- id: t_counters
+  kind: teach
+  title: 'S6: COUNTERS_DB — how counters are farmed'
+  optional: true
+- id: o_counters
+  kind: observe
+  title: 'S6: The port-name map and a live counter row'
+  optional: true
+- id: q_counters
+  kind: qna
+  title: 'S6: Questions — COUNTERS_DB'
+  optional: true
+- id: t_admin_path
+  kind: teach
+  title: 'S7: The journey of one shutdown across the databases'
+  optional: true
+- id: o_admin_path
+  kind: observe
+  title: 'S7: Trace admin_status through CONFIG_DB, APPL_DB, STATE_DB'
+  optional: true
+- id: q_admin_path
+  kind: qna
+  title: 'S7: Questions — admin status propagation'
+  optional: true
+- id: t_procs
+  kind: teach
+  title: 'S8: Inside a container — supervised processes'
+  optional: true
+- id: o_procs
+  kind: observe
+  title: 'S8: orchagent, syncd, bgpd as ordinary processes'
+  optional: true
+- id: q_procs
+  kind: qna
+  title: 'S8: Questions — processes'
+  optional: true
+- id: chaos
+  kind: chaos_select
+  title: Pick one failure to inject (8 options)
+  optional: false
+- id: restore
+  kind: restore
+  title: Heal the lab, verify baseline
+  optional: false
+commands:
+  baseline:
+  - 'leaf1: docker ps'
+  - 'leaf1: show feature status'
+  after_chaos:
+  - 'leaf1: docker ps'
+  - 'leaf1: show feature status'
+  - 'leaf1: show interfaces status'
+  - 'leaf1: show vlan brief'
+  - 'leaf1: sonic-db-cli CONFIG_DB dbsize'
+  - 'leaf1: sonic-db-cli APPL_DB dbsize'
+  - 'leaf1: sonic-db-cli ASIC_DB dbsize'
+  - 'h1: ping -c 5 10.0.1.1'
+  - 'h1: ping -c 5 10.0.2.10'
+  per_step:
+    o_containers:
+    - 'leaf1: docker ps'
+    - 'leaf1: show feature status'
+    o_configdb:
+    - 'leaf1: sonic-db-cli CONFIG_DB keys "PORT|*"'
+    - 'leaf1: sonic-db-cli CONFIG_DB hgetall "PORT|Ethernet8"'
+    - 'leaf1: sonic-db-cli CONFIG_DB keys "VLAN*"'
+    - 'leaf1: sonic-db-cli CONFIG_DB keys "BGP_NEIGHBOR*"'
+    o_pipeline:
+    - 'leaf1: sonic-db-cli CONFIG_DB keys "VLAN|Vlan30"'
+    - 'leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_VLAN*"'
+    - 'leaf1: sudo config vlan add 30'
+    - 'leaf1: sonic-db-cli CONFIG_DB keys "VLAN|Vlan30"'
+    - 'leaf1: sonic-db-cli APPL_DB keys "VLAN_TABLE:Vlan30"'
+    - 'leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_VLAN*"'
+    - 'leaf1: sudo config vlan del 30'
+    o_statedb:
+    - 'leaf1: sonic-db-cli STATE_DB keys "PORT_TABLE|Ethernet8"'
+    - 'leaf1: sonic-db-cli STATE_DB hgetall "PORT_TABLE|Ethernet8"'
+    - 'leaf1: show interfaces status'
+    o_asicdb:
+    - 'leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_PORT*"'
+    - 'leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_VLAN*"'
+    - 'leaf1: sonic-db-cli ASIC_DB hgetall "VIDTORID"'
+    o_counters:
+    - 'leaf1: sonic-db-cli COUNTERS_DB keys "COUNTERS_PORT_NAME_MAP"'
+    - 'leaf1: sonic-db-cli COUNTERS_DB hgetall "COUNTERS_PORT_NAME_MAP"'
+    - 'leaf1: show interfaces counters'
+    o_admin_path:
+    - 'leaf1: sonic-db-cli CONFIG_DB hget "PORT|Ethernet4" admin_status'
+    - 'leaf1: sudo config interface shutdown Ethernet4'
+    - 'leaf1: sonic-db-cli CONFIG_DB hget "PORT|Ethernet4" admin_status'
+    - 'leaf1: sonic-db-cli APPL_DB hget "PORT_TABLE:Ethernet4" admin_status'
+    - 'leaf1: sonic-db-cli STATE_DB hget "PORT_TABLE|Ethernet4" oper_status'
+    - 'leaf1: sudo config interface startup Ethernet4'
+    o_procs:
+    - 'leaf1: docker exec swss supervisorctl status'
+    - 'leaf1: docker exec bgp supervisorctl status'
+  vocabulary:
+  - show feature status*
+  - show feature config*
+  - show services*
+  - show processes*
+  - show interfaces status*
+  - show interfaces counters*
+  - show vlan*
+  - show ip route*
+  - show runningconfiguration*
+  - sonic-db-cli CONFIG_DB *
+  - sonic-db-cli APPL_DB *
+  - sonic-db-cli ASIC_DB *
+  - sonic-db-cli STATE_DB *
+  - sonic-db-cli COUNTERS_DB *
+  - redis-cli *
+  - docker ps*
+  - docker exec * supervisorctl status*
+  - config vlan*
+  - config interface shutdown*
+  - config interface startup*
+  - ping*
+chaos_options:
+- id: c_stop_swss
+  label: 'Decapitate the pipeline: stop the swss container'
+  type: service
+  inject:
+  - 'leaf1: sudo systemctl stop swss'
+  restore:
+  - 'leaf1: sudo systemctl start swss'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - 'orchagent and the managers vanish (`docker ps` loses swss; `show feature status` may still read enabled — intent vs reality again). The pipeline''s middle is gone, so *new* configuration no longer reaches hardware. Existing forwarding often keeps working for a while because syncd and the ASIC still hold their programmed state — a striking lesson that the control plane and the already-programmed data plane are separable `[VERIFY-ON-LAB: whether h1↔h2 keeps flowing with swss down, and for how long]`. Recovery on `start` replays state from CONFIG_DB/APPL_DB; expect a rebuild period before everything is green `[VERIFY-ON-LAB: recovery time; whether syncd needs co-restart]`.'
+  risk: high
+  enabled: true
+  plan_b: '`leaf1: sudo config feature state swss disabled` / `enabled` (feature surface instead of systemd).'
+- id: c_vlan_churn_50
+  label: 'Flood the pipeline: fifty VLANs at once'
+  type: churn
+  inject:
+  - 'leaf1: sudo config vlan add -m 100-149'
+  restore:
+  - 'leaf1: sudo config vlan del -m 100-149'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - 'Fifty new VLANs stampede down the staircase. `dbsize` jumps in CONFIG_DB, then APPL_DB, then ASIC_DB — and the *gap in time* between those jumps is the propagation lag made visible. Existing traffic (h1↔h2) should be unaffected; this is a control-plane load test, not a data-plane break. Measure how long until ASIC_DB fully catches up `[VERIFY-ON-LAB: per-stage lag on vs; whether any transient CPU spike]`.'
+  risk: medium
+  enabled: true
+  plan_b: add the fifty VLANs one-by-one in a timed loop to draw a per-object lag curve instead of one bulk jump.
+- id: c_stop_orchagent
+  label: 'Kill only the translator: stop orchagent'
+  type: service
+  inject:
+  - 'leaf1: docker exec swss supervisorctl stop orchagent'
+  restore:
+  - 'leaf1: docker exec swss supervisorctl start orchagent'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - APPL_DB still fills from the managers, but nothing drains it into ASIC_DB — the staircase breaks at exactly one step. New config strands in APPL_DB; existing hardware state persists. The most surgical demonstration of orchagent's role. Auto-restart policy may resurrect it or take swss down `[VERIFY-ON-LAB]`.
+  risk: high
+  enabled: false
+  plan_b: kill the orchagent PID inside swss instead of using supervisorctl (same effect, blunter).
+- id: c_pause_swss
+  label: 'Freeze, don''t kill: pause the swss container'
+  type: service
+  inject:
+  - 'leaf1: docker pause swss'
+  restore:
+  - 'leaf1: docker unpause swss'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - The subtle one. `docker ps` still lists swss as "up" (Paused) — it *exists* but its processes are frozen, so the pipeline stalls silently. Intent enters CONFIG_DB and goes nowhere; no error, no crash, just no progress. Teaches that "container present" ≠ "container working," mirroring admin-vs-operational one layer up.
+  risk: medium
+  enabled: false
+  plan_b: '`kill -STOP` / `-CONT` the orchagent PID (freeze one daemon instead of the whole container).'
+- id: c_stop_lldp_feature
+  label: 'Turn off a whole feature container: LLDP'
+  type: service
+  inject:
+  - 'leaf1: sudo config feature state lldp disabled'
+  restore:
+  - 'leaf1: sudo config feature state lldp enabled'
+  expected_effects:
+  - 'A clean, safe demonstration of feature→container coupling. `show feature status` flips lldp to disabled and the lldp container leaves `docker ps` within seconds; APPL_DB''s LLDP_ENTRY_TABLE stops being refreshed and its rows age out. Zero data-plane impact — h1↔h2 keeps flowing at 0% loss. Recovery: re-enabling brings the container back and neighbors repopulate.'
+  risk: low
+  enabled: true
+  plan_b: '`leaf1: sudo systemctl stop lldp` / `start lldp`.'
+- id: c_redis_rogue_key
+  label: 'Bypass the CLI: write raw intent into CONFIG_DB'
+  type: config
+  inject:
+  - 'leaf1: sonic-db-cli CONFIG_DB hset "VLAN|Vlan999" vlanid 999'
+  restore:
+  - 'leaf1: sonic-db-cli CONFIG_DB del "VLAN|Vlan999"'
+  - 'leaf1: sudo config vlan del 999'
+  expected_effects:
+  - Tests whether the pipeline trusts CONFIG_DB blindly. If the manager consumes the raw key, Vlan999 appears in APPL_DB and ASIC_DB despite never passing the CLI's validation — a pointed lesson in why writing Redis directly is dangerous. If the manager rejects malformed intent, nothing propagates — an equally useful result about where validation actually lives.
+  risk: medium
+  enabled: false
+  plan_b: 'write a malformed field into an existing VLAN key and watch the logs for a rejection (`leaf1: tail -50 /var/log/syslog`).'
+- id: c_stop_syncd
+  label: 'Sever the ASIC link: stop syncd'
+  type: service
+  inject:
+  - 'leaf1: sudo systemctl stop syncd'
+  restore:
+  - 'leaf1: sudo systemctl start syncd'
+  - 'leaf1: sudo systemctl restart swss'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - The bottom of the staircase disappears. ASIC_DB may keep accepting desired objects, but nobody pushes them to the (virtual) chip; the data plane freezes at its last programmed state and drifts from intent. Often the messiest to recover — the pipeline usually needs a coordinated restart. The clearest picture of syncd as the sole hardware executor.
+  risk: high
+  enabled: false
+  plan_b: '`leaf1: docker stop syncd` / `docker start syncd`.'
+- id: c_config_reload
+  label: 'The big replay: reload the entire configuration'
+  type: churn
+  inject:
+  - 'leaf1: sudo config reload -y'
+  restore:
+  - 'h1: ping -c 3 10.0.1.1'
+  - 'h1: ping -c 3 10.0.2.10'
+  expected_effects:
+  - 'The nuclear replay: services stop, CONFIG_DB is re-applied from scratch, and the entire staircase rebuilds from the top. Everything churns — dbsizes dip and recover, containers restart, BGP re-establishes. A whole-system view of the pipeline cold-starting. Expect a minute-scale outage window `[VERIFY-ON-LAB: total recovery time on vs]`.'
+  risk: high
+  enabled: false
+  plan_b: '`leaf1: sudo systemctl restart swss` (partial replay of just the swss stage).'
+observe:
+  facts:
+  - interface_status
+  - redis_keys
+  - propagation_lag
+  measure_recovery: true
+qna:
+  scope_keywords:
+  - sonic
+  - architecture
+  - container
+  - docker
+  - docker ps
+  - feature
+  - feature status
+  - swss
+  - orchagent
+  - syncd
+  - sai
+  - bgp container
+  - lldp container
+  - database container
+  - redis
+  - config_db
+  - appl_db
+  - asic_db
+  - state_db
+  - counters_db
+  - pipeline
+  - producer
+  - consumer
+  - subscribe
+  - publish
+  - propagation
+  - propagation lag
+  - eventual consistency
+  - intent
+  - readback
+  - oper_status
+  - admin_status
+  - mgrd
+  - manager
+  - syncer
+  - vlanmgrd
+  - portmgrd
+  - portsyncd
+  - fpmsyncd
+  - sonic-db-cli
+  - dbsize
+  - keys
+  - hgetall
+  - vid
+  - rid
+  - vidtorid
+  - flex counter
+  - name map
+  - supervisord
+  - supervisorctl
+  - process
+  - daemon
+  - systemctl
+  - config reload
+  suggested_questions:
+    q_containers:
+    - What are the main SONiC containers and what does each one do?
+    - What's the difference between a feature being "enabled" and its container being "running"?
+    - Which containers form the spine of the forwarding pipeline, and why those?
+    q_configdb:
+    - What exactly does CONFIG_DB hold, and what does it *not* hold?
+    - If CONFIG_DB is just data, how does writing to it ever change the hardware?
+    - Where did the VLAN and port settings from Lesson 1 actually go?
+    q_pipeline:
+    - Walk me through every stop Vlan30 made from `config vlan add 30` to the chip.
+    - Why isn't the change atomic — what does "eventual consistency" mean here?
+    - Which process moves data from CONFIG_DB to APPL_DB, and which from APPL_DB to ASIC_DB?
+    q_statedb:
+    - What's the difference between CONFIG_DB and STATE_DB for a port?
+    - When would `admin_status` and `oper_status` legitimately disagree?
+    - Which database is the "Oper" column of `show interfaces status` really reading?
+    q_asicdb:
+    - What is a SAI object, and why does ASIC_DB use them instead of vendor commands?
+    - What is the VID-to-RID map for?
+    - Where did the learned MAC from Lesson 1 live in this database?
+    q_counters:
+    - Why did `show interfaces counters` sometimes lag behind my traffic in Lesson 1?
+    - What is COUNTERS_PORT_NAME_MAP and why is it needed?
+    - Which process fills COUNTERS_DB, and how often?
+    q_admin_path:
+    - Trace `admin_status` from CONFIG_DB to STATE_DB after a shutdown.
+    - Why did we pick Ethernet4 for this trace instead of Ethernet8?
+    - In what order do the databases reflect the shutdown, and why that order?
+    q_procs:
+    - What is supervisord doing inside each container?
+    - Which processes live in swss, and which in bgp?
+    - Why can one daemon crash without rebooting the whole switch?
+meta:
+  verified_on: UNVERIFIED — docker-sonic-vs:202405
+  card_version: 1
