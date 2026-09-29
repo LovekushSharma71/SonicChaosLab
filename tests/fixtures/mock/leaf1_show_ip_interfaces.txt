@@ -1,0 +1,5 @@
+Interface    Master    IPv4 address/mask    Admin/Oper
+-----------  --------  -------------------  ----------
+Vlan10                 10.0.1.1/24          up/up
+Ethernet0              10.0.12.0/31         up/up
+Ethernet4              10.0.12.2/31         up/up

@@ -1,0 +1,5 @@
+Interface:    Ethernet0
+  ChassisID:  mac 52:54:00:00:00:02
+  SysName:    leaf2
+  TTL:        120
+  PortID:     Ethernet0

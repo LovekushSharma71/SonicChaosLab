@@ -1,0 +1,1 @@
+Aging time for switch is 600 seconds

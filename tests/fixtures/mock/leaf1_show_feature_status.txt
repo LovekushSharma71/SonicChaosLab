@@ -1,0 +1,6 @@
+Feature    State     AutoRestart
+---------  --------  -----------
+bgp        enabled   enabled
+lldp       enabled   enabled
+swss       enabled   enabled
+syncd      enabled   enabled

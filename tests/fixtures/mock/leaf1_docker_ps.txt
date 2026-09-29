@@ -1,0 +1,7 @@
+CONTAINER ID   IMAGE                    STATUS         NAMES
+a1              docker-database:latest   Up 20 minutes  database
+a2              docker-swss:latest       Up 20 minutes  swss
+a3              docker-syncd:latest      Up 20 minutes  syncd
+a4              docker-fpm-frr:latest    Up 20 minutes  bgp
+a5              docker-lldp:latest       Up 20 minutes  lldp
+a6              docker-teamd:latest      Up 20 minutes  teamd

@@ -1,0 +1,2 @@
+VLAN|Vlan10
+VLAN_MEMBER|Vlan10|Ethernet8

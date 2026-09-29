@@ -1,0 +1,9 @@
+BGP routing table entry for 10.0.2.0/24
+Paths: (2 available, best #1, table default)
+  Advertised to non peer-group peers:
+  65002
+    10.0.12.1 from 10.0.12.1 (10.0.12.1)
+      Origin IGP, valid, external, multipath, best
+  65002
+    10.0.12.3 from 10.0.12.3 (10.0.12.3)
+      Origin IGP, valid, external, multipath

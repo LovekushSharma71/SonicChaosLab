@@ -1,0 +1,4 @@
+Codes: K - kernel, C - connected, S - static, B - BGP, > - selected, * - FIB
+
+B>* 10.0.2.0/24 [20/0] via 10.0.12.1, Ethernet0, 00:10:23
+  *                    via 10.0.12.3, Ethernet4, 00:10:23

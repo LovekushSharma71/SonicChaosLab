@@ -1,0 +1,4 @@
+LocalPort    RemoteDevice    RemotePortID    Capability
+-----------  --------------  --------------  ----------
+Ethernet0    leaf2           Ethernet0       BR
+Ethernet4    leaf2           Ethernet4       BR

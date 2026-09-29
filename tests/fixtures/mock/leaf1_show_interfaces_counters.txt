@@ -1,0 +1,2 @@
+      IFACE    STATE    RX_OK    RX_ERR    RX_DRP    TX_OK    TX_ERR    TX_DRP
+  Ethernet8        U      1024         0         0     1024         0         0

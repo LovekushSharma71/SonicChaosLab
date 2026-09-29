@@ -1,0 +1,4 @@
+  No.    Vlan    MacAddress          Port        Type
+-----  ------  -----------------  ----------  ---------
+    1      10  02:00:00:00:01:10   Ethernet8    Dynamic
+Total number of entries 1

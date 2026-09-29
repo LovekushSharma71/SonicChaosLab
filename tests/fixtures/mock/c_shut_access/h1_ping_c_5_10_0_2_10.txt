@@ -1,0 +1,4 @@
+PING 10.0.2.10 (10.0.2.10): 56 data bytes
+
+--- 10.0.2.10 ping statistics ---
+5 packets transmitted, 0 packets received, 100% packet loss

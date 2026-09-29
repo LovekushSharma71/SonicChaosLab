@@ -1,0 +1,6 @@
+admin_status
+up
+mtu
+9100
+speed
+40000

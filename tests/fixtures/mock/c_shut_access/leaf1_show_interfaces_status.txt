@@ -1,0 +1,5 @@
+  Interface            Lanes    Speed    MTU    FEC        Alias    Vlan    Oper    Admin
+-----------  ---------------  -------  -----  -----  -----------  ------  ------  -------
+  Ethernet0      0,1,2,3      40G    9100    N/A    Ethernet0  routed      up       up
+  Ethernet4      0,1,2,3      40G    9100    N/A    Ethernet4  routed      up       up
+  Ethernet8      0,1,2,3      40G    9100    N/A    Ethernet8  routed    down     down
