@@ -137,7 +137,8 @@ class DockerAdapter(DeviceAdapter):
 
     def run(self, spec: str) -> CommandResult:
         target, command = parse_spec(spec)
-        argv = ["docker", "exec", self._container(target), "bash", "-lc", command]
+        # sh, not bash: the alpine host containers ship no bash; sonic-vs has both.
+        argv = ["docker", "exec", self._container(target), "sh", "-lc", command]
         if self.ssh_host:
             argv = ["ssh", self.ssh_host, shlex.join(argv)]
         try:

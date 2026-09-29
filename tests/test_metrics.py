@@ -89,8 +89,16 @@ def test_snapshot_diff_detects_chaos(adapter):
     changed = metrics.diff_snapshots(before, after)
     joined = "\n".join(changed)
     assert "leaf1:bgp:10.0.12.1:state" in joined
-    assert "route:10.0.2.0/24:next_hops" in joined
-    assert "iface:Ethernet0:oper" in joined
+    assert "leaf1:route:10.0.2.0/24:next_hops" in joined
+    assert "leaf1:iface:Ethernet0:oper" in joined
+
+
+def test_snapshot_keys_are_target_scoped(adapter):
+    """leaf1 and leaf2 probes of the same table must not collide (mtu lesson probes both)."""
+    results = adapter.run_many(["leaf1: show interfaces status", "leaf2: show interfaces status"])
+    snap = metrics.collect_snapshot(results)
+    assert "leaf1:iface:Ethernet0:mtu" in snap.values
+    assert "leaf2:iface:Ethernet0:mtu" in snap.values
 
 
 def test_snapshot_no_change_is_empty(adapter):

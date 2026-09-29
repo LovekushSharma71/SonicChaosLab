@@ -43,3 +43,18 @@ authored lessons (or this build prompt) that should be folded back into the docs
 - Command spec slugs use a single `_` separator (`"leaf1: show mac"` -> `leaf1_show_mac`).
 - CLI back-navigation is an in-session step-index decrement (navigation state lives in the
   orchestrator, per §5).
+- Snapshot fact keys are prefixed with the source node (`leaf1:iface:Ethernet0:oper`) so probing
+  the same table on both leafs (mtu/bgp lessons) can never collide in the diff.
+- §5 universal keys (Esc/`b`/`q`) are realised as explicit `← Back` / `Quit` menu entries plus
+  Ctrl-C — the questionary select widget does not expose custom key bindings.
+- §5.2 endpoint 20's "confirm token" is a `confirm` boolean on the request body: the API is
+  local/trusted, and the CLI is the surface that implements preview-then-confirm interactively.
+- §8.6 "contradiction regexes built from facts" is simplified to the deterministic
+  must-mention-a-changed-fact check plus the length cap; a value-level contradiction detector
+  needs the eval harness first (§11 roadmap).
+- `topo/configs/*.json` use the `Force10-S6000` hwsku — the canonical public platform identifier
+  required by `docker-sonic-vs`; there is no vendor-free hwsku the image accepts.
+- Session resume persists (lesson, step, budgets) to `~/.chaoslab/session.json` on quit;
+  `chaoslab select` offers resume and `chaoslab run` shares the paused session's question budget.
+- Measured reconvergence: `restore` reports `recovery_seconds`; on a live lab with
+  `observe.measure_recovery` it polls (2 s interval, 30 s cap) until baseline facts return.

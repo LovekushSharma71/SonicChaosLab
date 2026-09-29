@@ -142,6 +142,70 @@ def test_experiment_nl_proposes_then_confirms(repo_root):
     assert confirmed.executed
 
 
+def test_experiment_offtopic_nl_counts_redirect(repo_root):
+    orch = _orch(repo_root)
+    _goto(orch, "qna")
+    before = orch.redirects_used
+    result = orch.experiment("bake me a chocolate cake")
+    assert result.redirected and not result.executed
+    assert orch.redirects_used == before + 1
+
+
+def test_experiment_malformed_spec_is_refused_not_crash(repo_root):
+    orch = _orch(repo_root)
+    _goto(orch, "qna")
+    result = orch.experiment("leaf1: bgp route please")  # relevant keywords, invalid command shape
+    assert not result.redirected or result.output  # never raises
+    empty = orch.experiment("leaf1:")
+    assert not empty.executed
+
+
+def test_restore_reports_recovery_seconds(repo_root):
+    orch = _orch(repo_root)
+    _goto(orch, "chaos_select")
+    orch.select_chaos("c_shut_one_link")
+    outcome = orch.restore()
+    assert outcome.healed
+    assert outcome.recovery_seconds >= 0.0
+
+
+def test_session_state_roundtrip(repo_root):
+    from chaoslab.core import engine
+
+    orch = _orch(repo_root)
+    orch.advance()
+    orch.advance()
+    orch.questions_used = 4
+    engine.save_session_state(orch)
+    saved = engine.load_session_state("bgp_reconvergence")
+    assert saved == {
+        "lesson_id": "bgp_reconvergence",
+        "step_index": 2,
+        "questions_used": 4,
+        "redirects_used": 0,
+    }
+    assert engine.load_session_state("mtu_mismatch") is None
+    engine.clear_session_state()
+    assert engine.load_session_state("bgp_reconvergence") is None
+
+
+def test_config_set_audit_logged(repo_root):
+    from chaoslab.core import engine
+    from chaoslab.settings import settings_dir
+
+    result = engine.config_set(
+        "leaf1",
+        ["config vlan add 300"],
+        _settings(),
+        confirm=True,
+        fixtures_dir=repo_root / "tests" / "fixtures" / "mock",
+    )
+    assert result.accepted
+    audit = settings_dir() / "transcript-config.txt"
+    assert audit.exists()
+    assert "config vlan add 300" in audit.read_text()
+
+
 def test_config_set_batch_allowlist(repo_root):
     orch = _orch(repo_root)
     ok = orch.config_set("leaf1", ["config vlan add 200", "config vlan member add 200 Ethernet4"])

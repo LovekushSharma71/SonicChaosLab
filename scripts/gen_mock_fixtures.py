@@ -296,6 +296,25 @@ DEFAULTS: dict[str, str] = {
     "leaf1: sudo config interface startup Ethernet4": "",
     "leaf1: sudo config vlan add 30": "",
     "leaf1: sudo config vlan del 30": "",
+    # --- config get (chaoslab config get <node>) ---
+    "leaf1: show runningconfiguration all": (
+        '{\n  "DEVICE_METADATA": {"localhost": {"hostname": "leaf1", "bgp_asn": "65001"}},\n'
+        '  "PORT": {"Ethernet0": {"admin_status": "up", "mtu": "9100"},\n'
+        '           "Ethernet4": {"admin_status": "up", "mtu": "9100"},\n'
+        '           "Ethernet8": {"admin_status": "up", "mtu": "9100"}},\n'
+        '  "VLAN": {"Vlan10": {"vlanid": "10"}},\n'
+        '  "VLAN_MEMBER": {"Vlan10|Ethernet8": {"tagging_mode": "untagged"}},\n'
+        '  "BGP_NEIGHBOR": {"10.0.12.1": {"asn": "65002"}, "10.0.12.3": {"asn": "65002"}}\n}\n'
+    ),
+    "leaf2: show runningconfiguration all": (
+        '{\n  "DEVICE_METADATA": {"localhost": {"hostname": "leaf2", "bgp_asn": "65002"}},\n'
+        '  "PORT": {"Ethernet0": {"admin_status": "up", "mtu": "9100"},\n'
+        '           "Ethernet4": {"admin_status": "up", "mtu": "9100"},\n'
+        '           "Ethernet8": {"admin_status": "up", "mtu": "9100"}},\n'
+        '  "VLAN": {"Vlan20": {"vlanid": "20"}},\n'
+        '  "VLAN_MEMBER": {"Vlan20|Ethernet8": {"tagging_mode": "untagged"}},\n'
+        '  "BGP_NEIGHBOR": {"10.0.12.0": {"asn": "65001"}, "10.0.12.2": {"asn": "65001"}}\n}\n'
+    ),
 }
 
 SHUT8_IFACES = [

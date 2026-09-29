@@ -1,0 +1,9 @@
+{
+  "DEVICE_METADATA": {"localhost": {"hostname": "leaf2", "bgp_asn": "65002"}},
+  "PORT": {"Ethernet0": {"admin_status": "up", "mtu": "9100"},
+           "Ethernet4": {"admin_status": "up", "mtu": "9100"},
+           "Ethernet8": {"admin_status": "up", "mtu": "9100"}},
+  "VLAN": {"Vlan20": {"vlanid": "20"}},
+  "VLAN_MEMBER": {"Vlan20|Ethernet8": {"tagging_mode": "untagged"}},
+  "BGP_NEIGHBOR": {"10.0.12.0": {"asn": "65001"}, "10.0.12.2": {"asn": "65001"}}
+}

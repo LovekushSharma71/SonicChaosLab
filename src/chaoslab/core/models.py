@@ -68,6 +68,7 @@ class RestoreOutcome(BaseModel):
     restore_commands: list[str]
     residual_changes: list[str]
     healed: bool
+    recovery_seconds: float = 0.0
 
 
 class ExperimentResult(BaseModel):

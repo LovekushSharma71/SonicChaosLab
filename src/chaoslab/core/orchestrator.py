@@ -10,6 +10,7 @@ and experiment explanations). The model never counts, gates, or decides flow (PR
 from __future__ import annotations
 
 import re
+import time
 import uuid
 from collections.abc import Iterator
 
@@ -330,15 +331,25 @@ class Orchestrator:
             return RestoreOutcome(
                 chaos_id="", restore_commands=[], residual_changes=[], healed=True
             )
+        started = time.monotonic()
         self.chaos.restore(active)
         verify = collect_snapshot(self.adapter.run_many(self.lesson.commands.after_chaos))
         residual = diff_snapshots(self.before_snapshot, verify) if self.before_snapshot else []
+        # Measured reconvergence: on a live lab, poll until the baseline facts return.
+        if residual and self.lesson.observe.measure_recovery and self.settings.lab_mode != "mock":
+            deadline = time.monotonic() + 30
+            while residual and time.monotonic() < deadline:
+                time.sleep(2)
+                verify = collect_snapshot(self.adapter.run_many(self.lesson.commands.after_chaos))
+                residual = diff_snapshots(self.before_snapshot, verify)
+        recovery_seconds = round(time.monotonic() - started, 2)
         self.last_state_lines = _snapshot_lines(verify)
         return RestoreOutcome(
             chaos_id=active.id,
             restore_commands=active.restore,
             residual_changes=residual,
             healed=not residual,
+            recovery_seconds=recovery_seconds,
         )
 
     def reset_lab(self) -> None:
@@ -366,6 +377,7 @@ class Orchestrator:
         if not _TARGET_PREFIX.match(text):
             proposed = self._propose_command(text)
             if proposed is None:
+                self.redirects_used += 1  # off-topic experiments count against the redirect cap
                 return ExperimentResult(
                     command=text,
                     relevant=False,
@@ -388,7 +400,19 @@ class Orchestrator:
                 )
             text = proposed
 
-        target, command = parse_spec(text)
+        try:
+            target, command = parse_spec(text)
+        except ValueError as exc:
+            return ExperimentResult(
+                command=text,
+                proposed_command=proposed,
+                relevant=False,
+                safe=False,
+                executed=False,
+                redirected=False,
+                output=f"Refused: {exc}",
+                questions_left=self.questions_left,
+            )
         relevant = experiment_relevance(command, self.lesson.commands.vocabulary)
         safe = experiment_safety(command)
         if not relevant:

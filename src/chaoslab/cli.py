@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import questionary
 import typer
 from rich.console import Console
@@ -17,10 +19,23 @@ from .lab.chaos import ChaosError
 from .llm import model
 from .settings import Settings, load_env, load_settings, set_value, settings_dir
 
-app = typer.Typer(add_completion=False, help="SONiC ChaosLab — learn networking by breaking it.")
+app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="SONiC ChaosLab — learn networking by breaking it.",
+)
 config_app = typer.Typer(help="Switch configuration (CONFIG_DB view).")
 app.add_typer(config_app, name="config")
 console = Console()
+
+KEY_BINDINGS = """\
+In-session navigation:
+  ↑/↓ + Enter   select in any menu (lessons, steps, chaos options, questions)
+  ← Back         every menu has a Back entry — one level up (step → lesson → catalogue)
+  Continue       advance to the next step
+  Quit           save session state and return to the shell (chaoslab select resumes)
+  Ctrl-C         same as Quit
+"""
 
 TOPOLOGY_DIAGRAM = """\
 h1 ── leaf1 ══════ leaf2 ── h4
@@ -38,6 +53,13 @@ def _load() -> Settings:
 
 
 # --------------------------------------------------------------------- simple commands
+@app.command()
+def help(ctx: typer.Context) -> None:
+    """Full command reference + in-session key bindings."""
+    console.print(ctx.parent.get_help() if ctx.parent else ctx.get_help())
+    console.print(Panel(KEY_BINDINGS, title="key bindings"))
+
+
 @app.command()
 def version() -> None:
     """Show version info."""
@@ -87,10 +109,19 @@ def down() -> None:
 def reset() -> None:
     """Restore the lab baseline (clears active chaos)."""
     settings = _load()
+    engine.clear_session_state()
     if settings.lab_mode == "mock":
-        console.print("Lab reset: mock adapter has no persistent state.")
+        console.print("Lab reset: mock adapter has no persistent state; session state cleared.")
         return
-    console.print("Lab reset: re-apply baseline configs and 'config interface startup' on links.")
+    from .lab.adapter import make_adapter
+
+    adapter = make_adapter(settings)
+    for node in ("leaf1", "leaf2"):
+        result = adapter.run(f"{node}: sudo config interface startup Ethernet0,Ethernet4,Ethernet8")
+        console.print(f"  {node}: startup all lesson ports ({'ok' if result.ok else 'failed'})")
+    console.print(
+        "Baseline interfaces restored. Re-apply topo/configs/*.json for a full config reset."
+    )
 
 
 @app.command()
@@ -126,20 +157,38 @@ def config_get(node: str) -> None:
 
 
 @config_app.command("set")
-def config_set(node: str, lines: list[str] = typer.Argument(...)) -> None:
+def config_set(
+    node: str,
+    lines: list[str] = typer.Argument(None),
+    file: str = typer.Option("", "--file", help="read one command per line from a file"),
+) -> None:
     """Apply one or more SONiC 'config ...' set-family lines (allowlist-validated, atomic)."""
     settings = _load()
-    preview = engine.config_set(node, lines, settings, confirm=False)
-    if not preview.accepted:
-        console.print(f"[red]Rejected line:[/red] {preview.rejected_line}")
+    batch = list(lines or [])
+    if file:
+        batch = [line.strip() for line in Path(file).read_text().splitlines() if line.strip()]
+    if not batch:
+        console.print("Paste config lines, one per line; end with a blank line:")
+        while True:
+            entry = questionary.text("").ask()
+            if not entry or not entry.strip():
+                break
+            batch.append(entry.strip())
+    if not batch:
+        console.print("Nothing to apply.")
         raise typer.Exit(1)
-    console.print(Panel("\n".join(lines), title=f"apply to {node}?"))
+    preview = engine.config_set(node, batch, settings, confirm=False)
+    if not preview.accepted:
+        console.print(f"[red]Rejected line:[/red] {preview.rejected_line} (whole batch refused)")
+        raise typer.Exit(1)
+    console.print(Panel("\n".join(batch), title=f"apply to {node}?"))
     if not questionary.confirm("Apply this batch?").ask():
         console.print("Aborted.")
         return
-    applied = engine.config_set(node, lines, settings, confirm=True)
+    applied = engine.config_set(node, batch, settings, confirm=True)
     for result in applied.applied:
         console.print(f"  {result.spec}")
+    console.print("[dim]Batch logged to the session transcript.[/dim]")
 
 
 @app.command()
@@ -155,11 +204,18 @@ def run(
         console.print("No active lesson. Run 'chaoslab select' first (or pass --lesson).")
         raise typer.Exit(1)
     orch = engine.build_orchestrator(lesson_id, settings)
+    saved = engine.load_session_state(lesson_id)
+    if saved:  # experiments share the paused session's question budget (§5)
+        orch.step_index = saved["step_index"]
+        orch.questions_used = saved["questions_used"]
+        orch.redirects_used = saved["redirects_used"]
     result = orch.experiment(cmd, explain=not no_explain)
     if result.proposed_command and not result.executed:
         console.print(f"Proposed: [cyan]{result.proposed_command}[/cyan]")
         if questionary.confirm("Run it?").ask():
             result = orch.experiment(result.proposed_command, explain=not no_explain)
+    if saved:
+        engine.save_session_state(orch)
     if result.redirected:
         console.print(Panel(result.output, title="off-topic"))
         return
@@ -196,7 +252,33 @@ def select(lesson_id: str = typer.Argument("")) -> None:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
     engine.save_last_lesson(lesson_id)
+    saved = engine.load_session_state(lesson_id)
+    resumed = False
+    if saved and 0 < saved["step_index"] < len(orch.lesson.steps):
+        resume = questionary.confirm(
+            f"Resume where you left off (step {saved['step_index'] + 1})?"
+        ).ask()
+        if resume:
+            orch.step_index = saved["step_index"]
+            orch.questions_used = saved["questions_used"]
+            orch.redirects_used = saved["redirects_used"]
+            resumed = True
+    if not resumed:
+        _pick_start_step(orch)
     _run_loop(orch)
+
+
+def _pick_start_step(orch: Orchestrator) -> None:
+    """Sublesson navigation (§5): jump straight to a step / chaos scenario if desired."""
+    choices = [questionary.Choice(title="▶ Start from the beginning", value=-1)]
+    for index, step in enumerate(orch.lesson.steps):
+        marker = "○" if step.optional else "●"
+        choices.append(
+            questionary.Choice(title=f"{marker} {step.title} [{step.kind}]", value=index)
+        )
+    picked = questionary.select("Start at", choices=choices).ask()
+    if picked is not None and picked >= 0:
+        orch.step_index = picked
 
 
 def _nav(orch: Orchestrator) -> str:
@@ -233,9 +315,11 @@ def _run_loop(orch: Orchestrator) -> None:
             _render_restore(orch, transcript_lines)
             action = _nav(orch)
         if action == "quit":
+            engine.save_session_state(orch)
             console.print("Session paused. Resume with 'chaoslab select'.")
             break
     else:
+        engine.clear_session_state()
         console.print(Panel("Lesson complete. Well done!", style="green"))
     _write_transcript(orch, transcript_lines)
 
@@ -276,6 +360,10 @@ def _qna_loop(orch: Orchestrator, transcript_lines: list[str]) -> str:
                 _render_experiment(orch, text)
         else:
             _stream_answer(orch, pick, transcript_lines)
+        if 0 < orch.redirect_cap <= orch.redirects_used:
+            console.print("[yellow]Too many off-topic inputs for this step; moving on.[/yellow]")
+            orch.advance()
+            return "continue"
         if orch.questions_left <= 0:
             console.print("[yellow]Question budget reached; moving on.[/yellow]")
             orch.advance()
@@ -332,12 +420,17 @@ def _chaos_step(orch: Orchestrator, transcript_lines: list[str]) -> str:
     if pick == "__back__":
         orch.step_index = max(0, orch.step_index - 1)
         return "back"
+    prediction = questionary.text("Your prediction — what do you expect to change?").ask() or ""
+    if prediction.strip():
+        transcript_lines.append(f"Prediction for {pick}: {prediction.strip()}")
     try:
         outcome = orch.select_chaos(pick)
     except ChaosError as exc:
         console.print(f"[red]{exc}[/red]")
         return "continue"
     _render_diff(outcome.changed_facts)
+    if prediction.strip():
+        console.print(Panel(prediction.strip(), title="your prediction — compare against the diff"))
     console.print(
         Panel(outcome.explanation, title="impact" + (" (lesson notes)" if outcome.fallback else ""))
     )
@@ -361,13 +454,21 @@ def _render_diff(changed: list[str]) -> None:
 
 def _render_restore(orch: Orchestrator, transcript_lines: list[str]) -> None:
     outcome = orch.restore()
+    timing = f" (recovered in {outcome.recovery_seconds:g} s)" if outcome.chaos_id else ""
     if outcome.healed:
-        console.print(Panel("Baseline restored and verified.", style="green", title="restore"))
+        console.print(
+            Panel(f"Baseline restored and verified.{timing}", style="green", title="restore")
+        )
     else:
         console.print(
-            Panel("Residual changes:\n" + "\n".join(outcome.residual_changes), title="restore")
+            Panel(
+                "Residual changes:\n" + "\n".join(outcome.residual_changes) + timing,
+                title="restore",
+            )
         )
-    transcript_lines.append(f"Restore {outcome.chaos_id}: healed={outcome.healed}")
+    transcript_lines.append(
+        f"Restore {outcome.chaos_id}: healed={outcome.healed} in {outcome.recovery_seconds:g}s"
+    )
 
 
 def _write_transcript(orch: Orchestrator, lines: list[str]) -> None:

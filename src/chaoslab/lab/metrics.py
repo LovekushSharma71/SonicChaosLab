@@ -84,13 +84,12 @@ def parse_interface_status(text: str) -> list[InterfaceStatus]:
         if not match:
             continue
         cells = line.split()
-        oper = next((c for c in cells if c.lower() in ("up", "down")), "")
         opers = [c for c in cells if c.lower() in ("up", "down")]
         mtu = next((c for c in cells if c.isdigit() and 500 <= int(c) <= 20000), "")
         rows.append(
             InterfaceStatus(
                 name=match.group(1),
-                oper=opers[0].lower() if opers else oper,
+                oper=opers[0].lower() if opers else "",
                 admin=opers[-1].lower() if opers else "",
                 mtu=mtu,
             )
@@ -220,54 +219,59 @@ def _redis_value(command: str, text: str) -> str:
 
 
 def collect_snapshot(results: list[CommandResult]) -> Snapshot:
-    """Parse every recognised command output into a comparable snapshot."""
+    """Parse every recognised command output into a comparable snapshot.
+
+    Every fact key is prefixed with the source target so probes of the same table on
+    different nodes (e.g. interface status on both leafs) never collide.
+    """
     snapshot = Snapshot()
     for result in results:
         command = result.command
+        node = result.target
         if command.startswith("show interfaces status"):
             for iface in parse_interface_status(result.raw):
-                snapshot.values[f"iface:{iface.name}:oper"] = iface.oper
-                snapshot.values[f"iface:{iface.name}:admin"] = iface.admin
+                snapshot.values[f"{node}:iface:{iface.name}:oper"] = iface.oper
+                snapshot.values[f"{node}:iface:{iface.name}:admin"] = iface.admin
                 if iface.mtu:
-                    snapshot.values[f"iface:{iface.name}:mtu"] = iface.mtu
-            snapshot.structured.setdefault(f"{result.target}:interfaces", []).extend(
+                    snapshot.values[f"{node}:iface:{iface.name}:mtu"] = iface.mtu
+            snapshot.structured.setdefault(f"{node}:interfaces", []).extend(
                 i.model_dump() for i in parse_interface_status(result.raw)
             )
         elif command.startswith("show bgp summary"):
             for nbr in parse_bgp_summary(result.raw):
-                snapshot.values[f"{result.target}:bgp:{nbr.neighbor}:state"] = nbr.state
-                snapshot.values[f"{result.target}:bgp:{nbr.neighbor}:pfx_rcd"] = nbr.pfx_rcd
+                snapshot.values[f"{node}:bgp:{nbr.neighbor}:state"] = nbr.state
+                snapshot.values[f"{node}:bgp:{nbr.neighbor}:pfx_rcd"] = nbr.pfx_rcd
         elif "show ip route" in command:
             routes = parse_ip_route(result.raw)
             for route in routes:
-                snapshot.values[f"route:{route.prefix}:next_hops"] = ",".join(
+                snapshot.values[f"{node}:route:{route.prefix}:next_hops"] = ",".join(
                     sorted(route.next_hops)
                 )
-                snapshot.values[f"route:{route.prefix}:source"] = route.source
+                snapshot.values[f"{node}:route:{route.prefix}:source"] = route.source
             if command.strip().endswith("show ip route"):
-                snapshot.values["route_count"] = str(len(routes))
+                snapshot.values[f"{node}:route_count"] = str(len(routes))
         elif command.startswith("ping"):
             ping = parse_ping(command, result.raw)
-            key = f"ping:{ping.dest}:s{ping.size}:{'df' if ping.df else 'nodf'}"
+            key = f"{node}:ping:{ping.dest}:s{ping.size}:{'df' if ping.df else 'nodf'}"
             snapshot.values[key] = f"{ping.loss_pct:g}% loss"
         elif command == "show mac" or command.startswith("show mac -c"):
             entries, count = parse_mac_table(result.raw)
             if count is not None:
-                snapshot.values["mac_count"] = str(count)
+                snapshot.values[f"{node}:mac_count"] = str(count)
             for entry in entries:
-                snapshot.values[f"mac:{entry.mac}:port"] = entry.port
-                snapshot.values[f"mac:{entry.mac}:vlan"] = entry.vlan
+                snapshot.values[f"{node}:mac:{entry.mac}:port"] = entry.port
+                snapshot.values[f"{node}:mac:{entry.mac}:vlan"] = entry.vlan
         elif command.startswith("show lldp table"):
             neighbors = parse_lldp_table(result.raw)
-            snapshot.values["lldp_count"] = str(len(neighbors))
+            snapshot.values[f"{node}:lldp_count"] = str(len(neighbors))
             for nbr in neighbors:
-                snapshot.values[f"lldp:{nbr.local_port}:remote"] = nbr.remote_device
+                snapshot.values[f"{node}:lldp:{nbr.local_port}:remote"] = nbr.remote_device
         elif command.startswith("show vlan brief"):
             for vlan in parse_vlan_brief(result.raw):
-                snapshot.values[f"vlan:{vlan.vlan_id}:members"] = ",".join(vlan.members)
-                snapshot.values[f"vlan:{vlan.vlan_id}:ip"] = vlan.ip
+                snapshot.values[f"{node}:vlan:{vlan.vlan_id}:members"] = ",".join(vlan.members)
+                snapshot.values[f"{node}:vlan:{vlan.vlan_id}:ip"] = vlan.ip
         elif command.startswith("sonic-db-cli"):
-            snapshot.values[_redis_key(command)] = _redis_value(command, result.raw)
+            snapshot.values[f"{node}:{_redis_key(command)}"] = _redis_value(command, result.raw)
     return snapshot
 
 
