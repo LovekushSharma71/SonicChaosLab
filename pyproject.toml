@@ -52,6 +52,7 @@ select = ["E", "F", "I", "UP", "B"]
 "tests/*" = ["B011", "E501"]
 "src/chaoslab/lessons/schema.py" = ["E501"]
 "src/chaoslab/lab/adapter.py" = ["B027"]
+"src/chaoslab/cli.py" = ["B008"]
 "scripts/gen_mock_fixtures.py" = ["E501"]
 
 [tool.pytest.ini_options]
