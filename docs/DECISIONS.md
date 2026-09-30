@@ -41,8 +41,15 @@ authored lessons (or this build prompt) that should be folded back into the docs
 - Experiment NL instructions map to a proposed command via a deterministic keyword table (no LLM
   tool-calling / auto-execution, per §4 and §10); execution still requires confirmation.
 - Command spec slugs use a single `_` separator (`"leaf1: show mac"` -> `leaf1_show_mac`).
-- CLI back-navigation is an in-session step-index decrement (navigation state lives in the
-  orchestrator, per §5).
+- CLI navigation is a three-level menu tree (catalogue → lesson step-menu → step); `Back` always
+  goes up one level, and step menus offer a separate `← Previous step` for the sequential
+  decrement (UX review 2026-09-29; previously Back itself decremented the step index).
+- Spec gap: `chaoslab select [id]` replaced by `chaoslab lessons` (catalogue) + `chaoslab lesson
+  <id>` (direct jump); standalone `run -cmd` became free experimentation (safety allowlist only —
+  no lesson, no budget, no LLM) while relevance-gated + grounded-explained experiments stay
+  in-session. PRODUCT §5 updated to match.
+- `make run` opens `chaoslab shell` — a REPL (`SonicChaosLab>`) that dispatches typed commands to
+  the same typer app (leading `chaoslab` tolerated); the catalogue appears only on `lessons`.
 - Snapshot fact keys are prefixed with the source node (`leaf1:iface:Ethernet0:oper`) so probing
   the same table on both leafs (mtu/bgp lessons) can never collide in the diff.
 - §5 universal keys (Esc/`b`/`q`) are realised as explicit `← Back` / `Quit` menu entries plus
@@ -58,3 +65,53 @@ authored lessons (or this build prompt) that should be folded back into the docs
   `chaoslab select` offers resume and `chaoslab run` shares the paused session's question budget.
 - Measured reconvergence: `restore` reports `recovery_seconds`; on a live lab with
   `observe.measure_recovery` it polls (2 s interval, 30 s cap) until baseline facts return.
+
+## Lab infrastructure
+- Host naming aligned to the PRODUCT §7 diagram: h1/h2 on leaf1 (Vlan10: .10/.11), h3/h4 on leaf2
+  (Vlan20: .10/.11), access ports Ethernet8/Ethernet12, MAC scheme `02:00:00:00:0L:1N`. The far
+  ping target 10.0.2.10 is therefore **h3** (was misnamed h2); h2/h4 are silent endpoints today.
+- The sonic-vs image is fetched by `scripts/setup_lab_host.sh` from the official vs pipeline's
+  artifact API (`sonic-build.azurewebsites.net`), pinned to branch 202411 (202405 — the
+  curriculum's original `verified_on` target — now 404s on the API) with
+  `SONIC_VS_BRANCH`/`SONIC_VS_IMAGE_URL` overrides — artifacts are latest-successful per branch,
+  so the resolved URL is logged for traceability.
+- `preflight()` also checks the image is loaded locally, pointing at `make lab-bootstrap`.
+- Deploy and `chaoslab reset` share one path, `topology.apply_baseline()`: `config load -y` of the
+  side-bound CONFIG_DB baseline + `vtysh -f` of the FRR baseline + lesson-port startup, run through
+  the adapter so ssh lab mode works (§7 "re-apply baseline, never redeploy"). `config reload` was
+  abandoned — no systemd/sudo in the container. Mock mode stays a session-state clear. Caveat:
+  `config load` merges, so non-baseline keys survive reset until redeploy.
+- Baselines are bound to side paths (`/etc/sonic/baseline_config_db.json`, `frr_baseline.conf`):
+  sonic's `start.sh` moves a merged config over `/etc/sonic/config_db.json` at boot, which fails
+  on a bind-mounted file.
+- docker-sonic-vs ships no bgpcfgd — CONFIG_DB BGP tables are never translated — so the BGP
+  baseline lives in `topo/configs/frr_leaf*.conf` (applied via `vtysh -f`). `BGP_GLOBALS*` removed
+  from the JSON baselines as dead config; `BGP_NEIGHBOR` kept as an inert teaching aid
+  (inside_sonic inspects it in CONFIG_DB).
+- The image ships no sudo but lessons author `sudo config ...` verbatim, so `apply_baseline`
+  installs a pass-through sudo shim once per boot (docker exec is already root).
+- Readiness probe is `show interfaces status`, not `show version`: the latter always exits
+  nonzero on docker-sonic-vs (its container-versions section shells `sudo docker images`,
+  and the image has neither), which made every deploy "time out" against healthy leafs.
+- sonic-vs writes ~1.8 GB/leaf of `/var/log/swss/*.rec` SAI recordings within hours — enough to
+  fill an 8 GB host disk and wedge the data plane (processes stay RUNNING while forwarding dies).
+  `apply_baseline` installs a tiny in-container trim loop (5 min interval) plus a trim on every
+  deploy/reset; hosts that keep the lab up for days should still use a ≥20 GB volume.
+- First-boot race: `config load` writes `VLAN_INTERFACE` IPs before the Vlan netdev exists and
+  intfmgrd silently drops them (BGP /31s survive; the SVI gateway doesn't) — `apply_baseline`
+  re-adds every baseline interface IP explicitly after the load (idempotent).
+- First-boot race, round 2: the CLI answers seconds after container start while the port stack
+  is still initializing, and config written in that window is SILENTLY LOST (no replay).
+  Readiness now gates on SONiC's own `PORT_TABLE:PortInitDone` marker, and `apply_baseline`
+  runs a verify-and-reassert loop (re-load + re-startup + re-ip-add until APPL_DB shows
+  `admin_status=up`), then waits up to 3 min for both BGP sessions (connect-retry latency).
+- The sudo shim swallows `sudo docker …` silently: SONiC's show CLI shells docker internally,
+  the image has no nested docker, and the failure otherwise appends "exec: docker: not found"
+  noise to every command's captured output.
+- Fake provider now returns an explicit "(not implemented …)" placeholder for explanations and
+  Q&A instead of mock grounded prose — honest about the missing LLM (user decision 2026-09-30).
+- Experiment gates (relevance + read-only safety) are code-disabled behind `_GATES_ENABLED` until
+  the real-LLM milestone; guards stay unit-tested for the re-enable (user decision 2026-09-30).
+- First boot to a working SONiC CLI is ~4 min on a small vCPU host → ready timeout is 420 s.
+- `DeviceAdapter.run()` grew an optional per-call `timeout` because baseline `config load` and
+  first-boot commands exceed the 30 s exec default.

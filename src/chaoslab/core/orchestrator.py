@@ -42,7 +42,14 @@ from .models import (
     StreamEvent,
 )
 
-_TARGET_PREFIX = re.compile(r"^(leaf1|leaf2|h1|h2):")
+_TARGET_PREFIX = re.compile(r"^(leaf1|leaf2|h1|h2|h3|h4):")
+# Experiment gates are code-disabled until the real-LLM milestone (user decision 2026-09-30);
+# guards.py keeps the implementations unit-tested for the re-enable.
+_GATES_ENABLED = False
+_NOT_IMPLEMENTED = (
+    "(not implemented — grounded explanations arrive with a real LLM provider; "
+    "try: settings set provider anthropic)"
+)
 _PROPOSAL_MAP = [
     ("bgp", "leaf1: show bgp summary"),
     ("neighbor", "leaf1: show bgp summary"),
@@ -186,6 +193,8 @@ class Orchestrator:
         chaos_id: str | None = None,
         chaos_effect: str | None = None,
     ) -> tuple[str, bool]:
+        if self.settings.provider == "fake":
+            return _NOT_IMPLEMENTED, False
         request = assemble_context(
             self.card, state_lines, self.memory, mode, chaos_effect=chaos_effect
         )
@@ -225,6 +234,19 @@ class Orchestrator:
                 kind="budget",
                 text="Question budget reached for this lesson; moving on.",
                 should_advance=True,
+            )
+            return
+
+        if self.settings.provider == "fake":
+            self.questions_used += 1
+            self.memory.add(text, _NOT_IMPLEMENTED)
+            yield StreamEvent(kind="token", text=_NOT_IMPLEMENTED)
+            yield StreamEvent(
+                kind="verdict",
+                text="placeholder (no LLM provider configured)",
+                ok=True,
+                questions_left=self.questions_left,
+                should_advance=self.questions_left <= 0,
             )
             return
 
@@ -415,7 +437,7 @@ class Orchestrator:
             )
         relevant = experiment_relevance(command, self.lesson.commands.vocabulary)
         safe = experiment_safety(command)
-        if not relevant:
+        if _GATES_ENABLED and not relevant:
             self.redirects_used += 1
             return ExperimentResult(
                 command=text,
@@ -427,7 +449,7 @@ class Orchestrator:
                 output=self.card.redirect_line,
                 questions_left=self.questions_left,
             )
-        if not safe:
+        if _GATES_ENABLED and not safe:
             return ExperimentResult(
                 command=text,
                 proposed_command=proposed,
@@ -451,8 +473,8 @@ class Orchestrator:
         return ExperimentResult(
             command=text,
             proposed_command=proposed,
-            relevant=True,
-            safe=True,
+            relevant=relevant,
+            safe=safe,
             executed=True,
             redirected=False,
             output=result.raw,

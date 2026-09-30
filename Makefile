@@ -9,7 +9,7 @@ PY := $(BIN)/python
 PIP := $(BIN)/pip
 
 .PHONY: help setup build lint format test golden convert-lessons \
-        lab-up lab-down lab-status run api demo-answers clean clean-all all
+        lab-bootstrap lab-up lab-down lab-status lab-reset run api demo-answers clean clean-all all
 
 help: ## Print all targets with their descriptions
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -44,6 +44,9 @@ golden: ## Run the golden-set harness on the fake provider
 convert-lessons: ## Regenerate lessons/<id>/ YAML from lessons/<id>.md
 	$(PY) scripts/convert_lessons.py
 
+lab-bootstrap: ## One-time host setup: install containerlab + fetch the sonic-vs image
+	bash scripts/setup_lab_host.sh
+
 lab-up: ## Deploy the containerlab topology and poll until both leafs answer
 	$(BIN)/chaoslab up
 
@@ -53,8 +56,11 @@ lab-down: ## Destroy the containerlab topology (graceful; idempotent)
 lab-status: ## Show lab deploy state and node readiness
 	$(BIN)/chaoslab status
 
-run: ## Launch the lesson catalogue (defaults to lab_mode=mock, provider=fake)
-	$(BIN)/chaoslab select
+lab-reset: ## Restore the lab baseline (re-apply configs + startup ports)
+	$(BIN)/chaoslab reset
+
+run: ## Launch the interactive shell (defaults to lab_mode=mock, provider=fake)
+	$(BIN)/chaoslab shell
 
 api: ## Run the FastAPI dev server for the §5.2 API
 	$(BIN)/uvicorn chaoslab.api.server:app --reload --port 8000

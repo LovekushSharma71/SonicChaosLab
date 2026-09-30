@@ -5,7 +5,7 @@
 - **id:** `bgp_reconvergence`
 - **difficulty:** core (flagship)
 - **requires:** `switches_explained`, `inside_sonic` (assumes: L2/gateway boundary, the config pipeline, containers, APPL_DB/ASIC_DB, STATE_DB)
-- **target image:** docker-sonic-vs, branch **202405**, FRR routing stack (Containerlab: leaf1/leaf2 SONiC, h1/h2 hosts)
+- **target image:** docker-sonic-vs, branch **202405**, FRR routing stack (Containerlab: leaf1/leaf2 SONiC, h1–h4 hosts)
 - **devices used in this lesson:** `leaf1` primarily; `leaf2` for a few peer-side observations; `h1` for the end-to-end data-plane probe
 - **lab prerequisites assumed by this lesson (bake into topology):**
   - eBGP: **leaf1 AS 65001 ↔ leaf2 AS 65002** over TWO parallel /31 links:
@@ -13,7 +13,7 @@
     - Ethernet4: 10.0.12.2/31 (leaf1) ↔ 10.0.12.3/31 (leaf2)
   - leaf1's two BGP neighbors: **10.0.12.1** (via Ethernet0) and **10.0.12.3** (via Ethernet4); both remote-as 65002
   - each leaf originates its host subnet: leaf1 advertises **10.0.1.0/24**, leaf2 advertises **10.0.2.0/24**; leaf1 therefore learns 10.0.2.0/24 over BOTH sessions → **ECMP** with two next-hops
-  - h1 = 10.0.1.10/24 (Vlan10, gw 10.0.1.1); h2 = 10.0.2.10/24 (Vlan20, gw 10.0.2.1)
+  - h1 = 10.0.1.10/24 (Vlan10, gw 10.0.1.1); h3 = 10.0.2.10/24 (Vlan20, gw 10.0.2.1)
   - **BGP timers set DC-style: keepalive 3 s / hold 10 s** (fast, demo-friendly; the whole lesson's timing language assumes this)
   - **BGP fast-fallover enabled** (session drops immediately on link carrier loss) — SONiC/FRR default `[VERIFY-ON-LAB]`
   - **soft-reconfiguration inbound enabled** on leaf1 for both neighbors — FRR refuses `received-routes` (used in S2) without it `[VERIFY-ON-LAB: present in lab FRR config, else switch o_advertise to `routes`]`
@@ -61,7 +61,7 @@
 | 20 | o_messages | observe | S7: Opens, Updates, Keepalives, Notifications | optional |
 | 21 | q_messages | qna | S7: Questions — messages | optional |
 | 22 | t_dataplane | teach | S8: Control plane decides, data plane carries | optional |
-| 23 | o_dataplane | observe | S8: h1 reaches h2 while both links carry traffic | optional |
+| 23 | o_dataplane | observe | S8: h1 reaches h3 while both links carry traffic | optional |
 | 24 | q_dataplane | qna | S8: Questions — control vs data plane | optional |
 | 25 | chaos | chaos_select | Pick one failure to inject (9 options) | core |
 | 26 | restore | restore | Heal the lab, verify reconvergence | core |
@@ -95,9 +95,9 @@
 
 ### SECTION: t_routes — S3: The routing table — sources, selection, longest-prefix match
 
-**Essence.** BGP is a *source of routes*, not the router's forwarding table itself. All sources — directly connected subnets, static routes, BGP — feed a single **routing table**, and one rule decides which entry actually forwards a given packet: **longest-prefix match**. This scenario reads that table and dissects the entry that carries h1→h2.
+**Essence.** BGP is a *source of routes*, not the router's forwarding table itself. All sources — directly connected subnets, static routes, BGP — feed a single **routing table**, and one rule decides which entry actually forwards a given packet: **longest-prefix match**. This scenario reads that table and dissects the entry that carries h1→h3.
 
-**Mechanism.** Every route has a **prefix** (a network + mask, e.g. 10.0.2.0/24), a **next-hop** (where to send matching packets), and a **source code** telling you how it was learned: `C` connected (a subnet on a local interface — no protocol needed), `S` static, `B` BGP. When a packet arrives, the router finds *all* routes whose prefix contains the destination IP and picks the one with the **longest mask** (most specific). A `/32` beats a `/24` beats a `/0`. For leaf1 forwarding to h2 (10.0.2.10): 10.0.1.0/24 is `C` (connected, h1's side), and 10.0.2.0/24 is `B` (learned from leaf2) — the packet matches the BGP route and is sent toward leaf2. The route's existence is *why* the L2 boundary of Lesson 1 could be crossed.
+**Mechanism.** Every route has a **prefix** (a network + mask, e.g. 10.0.2.0/24), a **next-hop** (where to send matching packets), and a **source code** telling you how it was learned: `C` connected (a subnet on a local interface — no protocol needed), `S` static, `B` BGP. When a packet arrives, the router finds *all* routes whose prefix contains the destination IP and picks the one with the **longest mask** (most specific). A `/32` beats a `/24` beats a `/0`. For leaf1 forwarding to h3 (10.0.2.10): 10.0.1.0/24 is `C` (connected, h1's side), and 10.0.2.0/24 is `B` (learned from leaf2) — the packet matches the BGP route and is sent toward leaf2. The route's existence is *why* the L2 boundary of Lesson 1 could be crossed.
 
 **On SONiC.** `show ip route` prints the whole table with a legend of source codes; `show ip route 10.0.2.0/24` isolates the entry that matters. Read three things: the source (`B`, BGP), the prefix (10.0.2.0/24), and the next-hop(s) — and note there are *two* next-hops via the two inter-switch links. That plurality is ECMP, the next scenario. Compare with the connected routes for 10.0.12.0/31 and 10.0.12.2/31 (`C`) to feel the difference between "I'm directly on this wire" and "someone told me how to get there."
 
@@ -164,11 +164,11 @@ Watching the counters tells the story: KEEPALIVEs tick up steadily on a healthy 
 
 ### SECTION: t_dataplane — S8: Control plane decides, data plane carries
 
-**Essence.** BGP is **control plane** — it decides routes but forwards no user packet. The **data plane** — the chip programmed via the pipeline — is what actually carries h1's traffic to h2. They are separate systems, and separating them explains SONiC's most counter-intuitive failures. This scenario proves the split with a live ping while inspecting both planes.
+**Essence.** BGP is **control plane** — it decides routes but forwards no user packet. The **data plane** — the chip programmed via the pipeline — is what actually carries h1's traffic to h3. They are separate systems, and separating them explains SONiC's most counter-intuitive failures. This scenario proves the split with a live ping while inspecting both planes.
 
 **Mechanism.** The control plane (bgpd/zebra) computes the best/multipath route and hands it down; the data plane (ASIC_DB → syncd → chip) executes it at line rate with no per-packet involvement from BGP. Consequences you will exploit: (1) you can *stop the BGP process* and existing forwarding often persists, because the chip keeps its programmed routes (control gone, data alive); (2) you can keep the *session perfectly Established* yet break forwarding by withdrawing the route or corrupting the data path (control healthy, data dead). "Is BGP up?" and "does the ping work?" are genuinely different questions.
 
-**On SONiC.** The observe step pings h1→h2 (data plane working), then shows `show bgp summary` (control plane Established) and `show ip route 10.0.2.0/24` (the decision the control plane handed the data plane). Seeing all three green together sets the baseline; the chaos options then break exactly one plane at a time so you can watch them diverge.
+**On SONiC.** The observe step pings h1→h3 (data plane working), then shows `show bgp summary` (control plane Established) and `show ip route 10.0.2.0/24` (the decision the control plane handed the data plane). Seeing all three green together sets the baseline; the chaos options then break exactly one plane at a time so you can watch them diverge.
 
 **Boundaries.** How long the data plane survives without the control plane, and under which failures, is `[VERIFY-ON-LAB]` on the virtual switch — the *principle* is firm; the exact persistence window is lab-measured.
 
@@ -272,7 +272,7 @@ All options are restorable to baseline. "Injection-failed tell" = how to detect 
 - **restore:**
   - `leaf1: sudo config interface startup Ethernet0,Ethernet4`
   - `h1: ping -c 5 10.0.2.10`
-- **expected effects (words):** Both sessions drop within ~1 s (fast-fallover). 10.0.2.0/24 loses *all* next-hops and is withdrawn from the table entirely; h1→h2 goes to 100% loss. The starkest control-plane→data-plane consequence: no route, no forwarding. Recovery: both links up → both sessions re-establish within a few seconds → route and ECMP fully return.
+- **expected effects (words):** Both sessions drop within ~1 s (fast-fallover). 10.0.2.0/24 loses *all* next-hops and is withdrawn from the table entirely; h1→h3 goes to 100% loss. The starkest control-plane→data-plane consequence: no route, no forwarding. Recovery: both links up → both sessions re-establish within a few seconds → route and ECMP fully return.
 - **plan-B variant:** shut the two links on **leaf2** instead (`leaf2: sudo config interface shutdown Ethernet0,Ethernet4`) — identical effect from the peer's side.
 - **injection-failed tell:** `h1: ping 10.0.2.10` still succeeds after inject → at least one link stayed up.
 
@@ -313,7 +313,7 @@ All options are restorable to baseline. "Injection-failed tell" = how to detect 
 - **restore:**
   - `leaf2: vtysh -c "configure terminal" -c "router bgp 65002" -c "address-family ipv4 unicast" -c "network 10.0.2.0/24"`
   - `h1: ping -c 3 10.0.2.10`
-- **expected effects (words):** The purest control-vs-data lesson. Both sessions stay perfectly Established (keepalives flow), but leaf2 sends an UPDATE **withdrawing** 10.0.2.0/24. leaf1 removes the route from its table; h1→h2 dies with `show bgp summary` looking flawless. "BGP is up" and "the route exists" are shown to be different facts. Recovery: re-originate; the UPDATE re-adds the prefix in seconds.
+- **expected effects (words):** The purest control-vs-data lesson. Both sessions stay perfectly Established (keepalives flow), but leaf2 sends an UPDATE **withdrawing** 10.0.2.0/24. leaf1 removes the route from its table; h1→h3 dies with `show bgp summary` looking flawless. "BGP is up" and "the route exists" are shown to be different facts. Recovery: re-originate; the UPDATE re-adds the prefix in seconds.
 - **plan-B variant:** on leaf2, remove the Vlan20 IP so the *connected* origin of 10.0.2.0/24 disappears (blunter, also withdraws the prefix).
 - **injection-failed tell:** `leaf1: show ip route 10.0.2.0/24` still present after inject → origination wasn't actually removed (bgpcfgd may have re-added it).
 
@@ -352,7 +352,7 @@ All options are restorable to baseline. "Injection-failed tell" = how to detect 
 - **restore:**
   - `leaf1: sudo systemctl start bgp`
   - `h1: ping -c 5 10.0.2.10`
-- **expected effects (words):** bgpd, zebra, and fpmsyncd all die. Sessions drop (leaf2 will time out its side at hold). The revealing question: does h1→h2 keep working? If the chip retains its programmed routes, forwarding may persist even with the whole routing brain gone — control plane dead, data plane alive `[VERIFY-ON-LAB: whether ROUTE_TABLE/ASIC route lingers and for how long]`. Recovery: start bgp → sessions re-establish → fpmsyncd re-syncs routes into APPL_DB.
+- **expected effects (words):** bgpd, zebra, and fpmsyncd all die. Sessions drop (leaf2 will time out its side at hold). The revealing question: does h1→h3 keep working? If the chip retains its programmed routes, forwarding may persist even with the whole routing brain gone — control plane dead, data plane alive `[VERIFY-ON-LAB: whether ROUTE_TABLE/ASIC route lingers and for how long]`. Recovery: start bgp → sessions re-establish → fpmsyncd re-syncs routes into APPL_DB.
 - **plan-B variant:** `leaf1: docker exec bgp supervisorctl stop bgpd` — kill only bgpd while zebra/fpmsyncd live (subtler: existing routes may persist in zebra→APPL_DB longer).
 - **injection-failed tell:** `docker ps` still shows the bgp container running after inject → stop didn't take.
 
@@ -386,7 +386,7 @@ Parsers available: `interface_status, mac_table, lldp_neighbors, vlan_membership
 | o_journey | redis_keys | FRR route present; APPL_DB ROUTE_TABLE key present; ASIC next-hop-group present | assert same prefix visible at all three altitudes `[VERIFY-ON-LAB: key formats]` |
 | o_timers | bgp_neighbors | negotiated hold_time, keepalive_interval | assert hold≈10, keepalive≈3 `[VERIFY-ON-LAB]` |
 | o_messages | **NEW-PARSER: bgp_msg_stats** (per type: sent, rcvd) | Opens, Updates, Keepalives, Notifications | assert Keepalives climbing; Notifications 0 on steady state |
-| o_dataplane | ping_loss; bgp_neighbors; route_entry | ping h1→h2 loss 0%; both sessions Established; route present | all three planes green as baseline |
+| o_dataplane | ping_loss; bgp_neighbors; route_entry | ping h1→h3 loss 0%; both sessions Established; route present | all three planes green as baseline |
 
 ### After-chaos fact map (same command set for all options)
 
@@ -562,7 +562,7 @@ show bgp summary, clear ip bgp, 10.0.2.0/24, 10.0.12.1, ethernet0, leaf1, leaf2
 8. If advertised-routes were empty, what would you suspect?
 
 #### q_routes
-1. ★ How does the router pick between 10.0.1.0/24 and 10.0.2.0/24 for a packet to h2?
+1. ★ How does the router pick between 10.0.1.0/24 and 10.0.2.0/24 for a packet to h3?
 2. ★ What do the C and B source codes mean in `show ip route`?
 3. ★ Why is 10.0.2.0/24 a BGP route while 10.0.12.0/31 is connected?
 4. What is longest-prefix match, with an example?
@@ -613,7 +613,7 @@ show bgp summary, clear ip bgp, 10.0.2.0/24, 10.0.12.1, ethernet0, leaf1, leaf2
 
 #### q_dataplane
 1. ★ What's the difference between the control plane and the data plane here?
-2. ★ Why might h1→h2 keep working after you stop the bgp container?
+2. ★ Why might h1→h3 keep working after you stop the bgp container?
 3. ★ How can the session be Established while the ping fails?
 4. Which parts of SONiC are control plane and which are data plane?
 5. Why is "is BGP up?" not the same question as "does the ping work?"
@@ -628,7 +628,7 @@ show bgp summary, clear ip bgp, 10.0.2.0/24, 10.0.12.1, ethernet0, leaf1, leaf2
 3. **Loss windows:** measure data loss for c_shut_one_link, c_shut_both_links, c_clear_bgp (packets lost during reconvergence).
 4. **Hold-timer expiry:** for c_hold_timer_blackhole, confirm the session stays Established for ~hold seconds then drops with a "hold timer expired" NOTIFICATION; confirm which flows blackhole (hashing).
 5. **Route pipeline key formats:** APPL_DB `ROUTE_TABLE:10.0.2.0/24` shape; ASIC_DB next-hop-group object for the ECMP pair.
-6. **Data-plane persistence:** for c_stop_bgp_service, confirm whether h1↔h2 keeps forwarding with bgp stopped, and for how long; whether ROUTE_TABLE/ASIC route lingers.
+6. **Data-plane persistence:** for c_stop_bgp_service, confirm whether h1↔h3 keeps forwarding with bgp stopped, and for how long; whether ROUTE_TABLE/ASIC route lingers.
 7. **bgpcfgd interference:** for c_withdraw_only and c_wrong_asn, confirm whether live vtysh edits stick or are reverted by bgpcfgd/templated config; adjust method (CONFIG_DB + service restart) if reverted.
 8. **c_withdraw_only origination method:** confirm whether 10.0.2.0/24 is originated by a `network` statement or redistribute-connected in the lab's FRR config; use the matching removal.
 9. **c_link_flap:** confirm no route dampening by default; capture per-flap reconverge timing.

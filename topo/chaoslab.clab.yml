@@ -1,21 +1,27 @@
 # SPDX-License-Identifier: Apache-2.0
-# SONiC ChaosLab topology (PRODUCT.md §7): 2 sonic-vs leafs + 2 alpine hosts.
-# Two parallel /31 eBGP links between the leafs (ECMP); one access host per leaf on Vlan10/Vlan20.
-# sonic-vs images are amd64-only — deploy on an x86 host (see topo/README.md).
+# SONiC ChaosLab topology (PRODUCT.md §7): 2 sonic-vs leafs + 4 alpine hosts.
+# Two parallel /31 eBGP links between the leafs (ECMP); two access hosts per leaf (h1/h2 on
+# leaf1 Vlan10, h3/h4 on leaf2 Vlan20). sonic-vs images are amd64-only — deploy on an x86 host.
 name: chaoslab
 
 topology:
   nodes:
+    # The sonic-vs kind force-overrides the entrypoint and starts supervisord itself, and
+    # sonic's start.sh mv's a merged config over /etc/sonic/config_db.json (impossible on a
+    # bind-mounted file) — so baselines are bound to side paths and applied post-boot by
+    # the topology manager (config load + vtysh -f); see topo/README.md.
     leaf1:
       kind: sonic-vs
       image: docker-sonic-vs:latest
       binds:
-        - configs/leaf1.json:/etc/sonic/config_db.json:ro
+        - configs/leaf1.json:/etc/sonic/baseline_config_db.json:ro
+        - configs/frr_leaf1.conf:/etc/sonic/frr_baseline.conf:ro
     leaf2:
       kind: sonic-vs
       image: docker-sonic-vs:latest
       binds:
-        - configs/leaf2.json:/etc/sonic/config_db.json:ro
+        - configs/leaf2.json:/etc/sonic/baseline_config_db.json:ro
+        - configs/frr_leaf2.conf:/etc/sonic/frr_baseline.conf:ro
     h1:
       kind: linux
       image: alpine:latest
@@ -31,16 +37,38 @@ topology:
       image: alpine:latest
       exec:
         - ip link set eth1 down
+        - ip link set eth1 address 02:00:00:00:01:11
+        - ip link set eth1 mtu 9100
+        - ip link set eth1 up
+        - ip addr add 10.0.1.11/24 dev eth1
+        - ip route replace default via 10.0.1.1
+    h3:
+      kind: linux
+      image: alpine:latest
+      exec:
+        - ip link set eth1 down
         - ip link set eth1 address 02:00:00:00:02:10
         - ip link set eth1 mtu 9100
         - ip link set eth1 up
         - ip addr add 10.0.2.10/24 dev eth1
+        - ip route replace default via 10.0.2.1
+    h4:
+      kind: linux
+      image: alpine:latest
+      exec:
+        - ip link set eth1 down
+        - ip link set eth1 address 02:00:00:00:02:11
+        - ip link set eth1 mtu 9100
+        - ip link set eth1 up
+        - ip addr add 10.0.2.11/24 dev eth1
         - ip route replace default via 10.0.2.1
 
   links:
     # Parallel inter-switch /31 links -> SONiC Ethernet0 (eth1) and Ethernet4 (eth2).
     - endpoints: ["leaf1:eth1", "leaf2:eth1"]
     - endpoints: ["leaf1:eth2", "leaf2:eth2"]
-    # Access links to the hosts -> SONiC Ethernet8 (eth3).
+    # Access links -> SONiC Ethernet8 (eth3) and Ethernet12 (eth4).
     - endpoints: ["leaf1:eth3", "h1:eth1"]
-    - endpoints: ["leaf2:eth3", "h2:eth1"]
+    - endpoints: ["leaf1:eth4", "h2:eth1"]
+    - endpoints: ["leaf2:eth3", "h3:eth1"]
+    - endpoints: ["leaf2:eth4", "h4:eth1"]

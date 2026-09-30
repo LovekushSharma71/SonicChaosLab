@@ -24,7 +24,7 @@ So MTU is the perfect "up but broken" trap: the link is administratively and ope
 
 So `ping -M do -s 1472` succeeding proves the path carries at least 1500; `ping -M do -s 8972` succeeding proves the path carries at least 9000 — i.e., the jumbo fabric truly works end to end. When you later break MTU, the *small* sweep keeps passing while the *large* one dies: the signature of an MTU fault.
 
-**On SONiC.** The observe step runs the sweep from h1 to h2: `ping -M do -s 1472` (must pass at baseline) then `ping -M do -s 8972` (must also pass at baseline, proving the 9100 fabric). Both succeeding is your green light. Keep this exact pair — the restore step re-runs it to confirm healing, and every chaos option is graded by which half fails.
+**On SONiC.** The observe step runs the sweep from h1 to h3: `ping -M do -s 1472` (must pass at baseline) then `ping -M do -s 8972` (must also pass at baseline, proving the 9100 fabric). Both succeeding is your green light. Keep this exact pair — the restore step re-runs it to confirm healing, and every chaos option is graded by which half fails.
 
 **Boundaries.** This proves *size* capability, not throughput or latency. And it proves the path *as currently hashed* — a subtlety that matters under ECMP (scenario S5), where different flows may take different-MTU links.
 
@@ -78,7 +78,7 @@ The essence is: **status and routes lie about size; only a DF probe tells the tr
 
 ### SECTION: t_bgp_mtu — S7: Why BGP survives what your data doesn't (MSS)
 
-**Essence.** Here is the cruel twist that makes MTU faults so confusing: you break the fabric with a 1500-byte MTU, and **BGP stays perfectly Established** while h1→h2 data dies. The control plane shrugs off the very fault that blackholes user traffic. Understanding why closes the loop on "up but broken."
+**Essence.** Here is the cruel twist that makes MTU faults so confusing: you break the fabric with a 1500-byte MTU, and **BGP stays perfectly Established** while h1→h3 data dies. The control plane shrugs off the very fault that blackholes user traffic. Understanding why closes the loop on "up but broken."
 
 **Mechanism.** BGP runs over TCP, and TCP negotiates an **MSS** (maximum segment size) at connection setup — each side advertises how big a segment it will accept, derived from its local MTU, and TCP then *never sends a segment larger than the smaller MSS*. In other words, TCP does its own miniature PMTUD at the start and keeps its packets small enough to fit. BGP's messages (OPENs, tiny periodic KEEPALIVEs, modest UPDATEs) are small anyway and comfortably under even a 1500 MTU. So the session's packets always fit, even across the narrowed link — while h1's *bulk* data, which happily emits big packets, slams into the 1500 ceiling and is dropped. The session is a small-packet conversation; the data is a big-packet firehose. Same broken link, opposite outcomes — the ultimate proof that "control plane healthy" and "data plane working" are independent (Lesson 3), now with MTU as the wedge.
 

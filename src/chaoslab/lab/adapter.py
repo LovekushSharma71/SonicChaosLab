@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from ..settings import Settings
 
-TARGETS = ("leaf1", "leaf2", "h1", "h2")
+TARGETS = ("leaf1", "leaf2", "h1", "h2", "h3", "h4")
 _EXEC_TIMEOUT = 30
 
 
@@ -75,7 +75,7 @@ class DeviceAdapter(ABC):
     """Runs command specs against the lab and returns raw output."""
 
     @abstractmethod
-    def run(self, spec: str) -> CommandResult: ...
+    def run(self, spec: str, timeout: int | None = None) -> CommandResult: ...
 
     def run_many(self, specs: list[str]) -> list[CommandResult]:
         return [self.run(spec) for spec in specs]
@@ -97,7 +97,7 @@ class MockAdapter(DeviceAdapter):
         self.fixtures_dir = fixtures_dir or default_fixtures_dir()
         self.active_chaos: str | None = None
 
-    def run(self, spec: str) -> CommandResult:
+    def run(self, spec: str, timeout: int | None = None) -> CommandResult:
         target, command = parse_spec(spec)
         return CommandResult(target=target, command=command, raw=self._read(slugify_spec(spec)))
 
@@ -135,7 +135,7 @@ class DockerAdapter(DeviceAdapter):
     def _container(self, target: str) -> str:
         return f"{self.prefix}{self.lab_name}-{target}"
 
-    def run(self, spec: str) -> CommandResult:
+    def run(self, spec: str, timeout: int | None = None) -> CommandResult:
         target, command = parse_spec(spec)
         # sh, not bash: the alpine host containers ship no bash; sonic-vs has both.
         argv = ["docker", "exec", self._container(target), "sh", "-lc", command]
@@ -143,7 +143,7 @@ class DockerAdapter(DeviceAdapter):
             argv = ["ssh", self.ssh_host, shlex.join(argv)]
         try:
             proc = subprocess.run(
-                argv, capture_output=True, text=True, timeout=_EXEC_TIMEOUT, check=False
+                argv, capture_output=True, text=True, timeout=timeout or _EXEC_TIMEOUT, check=False
             )
         except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
             return CommandResult(

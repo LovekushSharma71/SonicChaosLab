@@ -5,7 +5,7 @@
 - **id:** `inside_sonic`
 - **difficulty:** core
 - **requires:** `switches_explained` (assumes: ports/admin-vs-operational, VLANs, FDB, and the one-line idea that SONiC state lives in Redis)
-- **target image:** docker-sonic-vs, branch **202405** (Containerlab: leaf1/leaf2 SONiC, h1/h2 Linux hosts)
+- **target image:** docker-sonic-vs, branch **202405** (Containerlab: leaf1/leaf2 SONiC, h1–h4 Linux hosts)
 - **devices used in this lesson:** `leaf1` primarily; `h1` for the one end-to-end reachability probe
 - **lab prerequisites assumed by this lesson (bake into topology):**
   - same baseline as Lesson 1, plus the two inter-switch links up and BGP established (leaf1 neighbors 10.0.12.1 and 10.0.12.3) so CONFIG_DB has a `BGP_NEIGHBOR` table to point at
@@ -149,7 +149,7 @@ Two properties define the whole system. It is **producer/consumer over Redis**: 
 
 **Essence.** Now put the staircase in motion with a real, reversible change and *watch every step*. Shutting a port is the cleanest possible trace: one field, `admin_status`, travels from intent (CONFIG_DB) to instruction (APPL_DB) to reality (STATE_DB), and you can read it at each stop.
 
-**Mechanism.** `config interface shutdown Ethernet4` writes `admin_status=down` into `CONFIG_DB PORT|Ethernet4`. `portmgrd`/`portsyncd` (in swss) react: the intent is translated into `APPL_DB PORT_TABLE:Ethernet4`, orchagent programs the port object down through ASIC_DB/syncd, the (virtual) link drops, and the readback lands in `STATE_DB PORT_TABLE|Ethernet4` as `oper_status=down`. One command, the whole pipeline, legible at every layer. We pick **Ethernet4** deliberately: it is one of the two parallel inter-switch links, so the other link keeps h1↔h2 traffic flowing (Lesson 3's ECMP) — this trace is observation-only, with no user outage.
+**Mechanism.** `config interface shutdown Ethernet4` writes `admin_status=down` into `CONFIG_DB PORT|Ethernet4`. `portmgrd`/`portsyncd` (in swss) react: the intent is translated into `APPL_DB PORT_TABLE:Ethernet4`, orchagent programs the port object down through ASIC_DB/syncd, the (virtual) link drops, and the readback lands in `STATE_DB PORT_TABLE|Ethernet4` as `oper_status=down`. One command, the whole pipeline, legible at every layer. We pick **Ethernet4** deliberately: it is one of the two parallel inter-switch links, so the other link keeps h1↔h3 traffic flowing (Lesson 3's ECMP) — this trace is observation-only, with no user outage.
 
 **On SONiC.** The observe step reads `admin_status` in CONFIG_DB, runs the shutdown, then reads `admin_status` again in CONFIG_DB, in APPL_DB `PORT_TABLE`, and `oper_status` in STATE_DB — before restoring with `startup`. You watch a single value ripple down the staircase in the correct order. (Self-cleaning: Ethernet4 is brought back up even on error.)
 
@@ -270,7 +270,7 @@ All options are restorable to baseline. "Injection-failed tell" = how to detect 
 - **restore:**
   - `leaf1: sudo systemctl start swss`
   - `h1: ping -c 3 10.0.2.10`
-- **expected effects (words):** orchagent and the managers vanish (`docker ps` loses swss; `show feature status` may still read enabled — intent vs reality again). The pipeline's middle is gone, so *new* configuration no longer reaches hardware. Existing forwarding often keeps working for a while because syncd and the ASIC still hold their programmed state — a striking lesson that the control plane and the already-programmed data plane are separable `[VERIFY-ON-LAB: whether h1↔h2 keeps flowing with swss down, and for how long]`. Recovery on `start` replays state from CONFIG_DB/APPL_DB; expect a rebuild period before everything is green `[VERIFY-ON-LAB: recovery time; whether syncd needs co-restart]`.
+- **expected effects (words):** orchagent and the managers vanish (`docker ps` loses swss; `show feature status` may still read enabled — intent vs reality again). The pipeline's middle is gone, so *new* configuration no longer reaches hardware. Existing forwarding often keeps working for a while because syncd and the ASIC still hold their programmed state — a striking lesson that the control plane and the already-programmed data plane are separable `[VERIFY-ON-LAB: whether h1↔h3 keeps flowing with swss down, and for how long]`. Recovery on `start` replays state from CONFIG_DB/APPL_DB; expect a rebuild period before everything is green `[VERIFY-ON-LAB: recovery time; whether syncd needs co-restart]`.
 - **plan-B variant:** `leaf1: sudo config feature state swss disabled` / `enabled` (feature surface instead of systemd).
 - **injection-failed tell:** `docker ps` still lists a running swss after inject → stop didn't take.
 
@@ -283,7 +283,7 @@ All options are restorable to baseline. "Injection-failed tell" = how to detect 
 - **restore:**
   - `leaf1: sudo config vlan del -m 100-149`
   - `h1: ping -c 3 10.0.2.10`
-- **expected effects (words):** Fifty new VLANs stampede down the staircase. `dbsize` jumps in CONFIG_DB, then APPL_DB, then ASIC_DB — and the *gap in time* between those jumps is the propagation lag made visible. Existing traffic (h1↔h2) should be unaffected; this is a control-plane load test, not a data-plane break. Measure how long until ASIC_DB fully catches up `[VERIFY-ON-LAB: per-stage lag on vs; whether any transient CPU spike]`.
+- **expected effects (words):** Fifty new VLANs stampede down the staircase. `dbsize` jumps in CONFIG_DB, then APPL_DB, then ASIC_DB — and the *gap in time* between those jumps is the propagation lag made visible. Existing traffic (h1↔h3) should be unaffected; this is a control-plane load test, not a data-plane break. Measure how long until ASIC_DB fully catches up `[VERIFY-ON-LAB: per-stage lag on vs; whether any transient CPU spike]`.
 - **plan-B variant:** add the fifty VLANs one-by-one in a timed loop to draw a per-object lag curve instead of one bulk jump.
 - **injection-failed tell:** `show vlan brief` shows far fewer than 50 new VLANs, or `config vlan add -m` errored on the range → sequence didn't fully apply.
 
@@ -321,7 +321,7 @@ All options are restorable to baseline. "Injection-failed tell" = how to detect 
   - `leaf1: sudo config feature state lldp disabled`
 - **restore:**
   - `leaf1: sudo config feature state lldp enabled`
-- **expected effects (words):** A clean, safe demonstration of feature→container coupling. `show feature status` flips lldp to disabled and the lldp container leaves `docker ps` within seconds; APPL_DB's LLDP_ENTRY_TABLE stops being refreshed and its rows age out. Zero data-plane impact — h1↔h2 keeps flowing at 0% loss. Recovery: re-enabling brings the container back and neighbors repopulate.
+- **expected effects (words):** A clean, safe demonstration of feature→container coupling. `show feature status` flips lldp to disabled and the lldp container leaves `docker ps` within seconds; APPL_DB's LLDP_ENTRY_TABLE stops being refreshed and its rows age out. Zero data-plane impact — h1↔h3 keeps flowing at 0% loss. Recovery: re-enabling brings the container back and neighbors repopulate.
 - **plan-B variant:** `leaf1: sudo systemctl stop lldp` / `start lldp`.
 - **injection-failed tell:** `docker ps` still shows the lldp container running after inject → feature change didn't take.
 
@@ -388,7 +388,7 @@ Parsers available: `interface_status, mac_table, lldp_neighbors, vlan_membership
 
 | chaos id | facts that should CHANGE | facts that should NOT change | measure_recovery |
 |---|---|---|---|
-| c_stop_swss | docker_ps loses swss; new-config path dead | ideally h1↔h2 ping (data plane persists) `[VERIFY-ON-LAB]` | yes — time to all-green after start |
+| c_stop_swss | docker_ps loses swss; new-config path dead | ideally h1↔h3 ping (data plane persists) `[VERIFY-ON-LAB]` | yes — time to all-green after start |
 | c_vlan_churn_50 | CONFIG_DB/APPL_DB/ASIC_DB dbsize +≈50 each, staggered in time | interface_status; ping 0% loss | yes — time to ASIC_DB catch-up |
 | c_stop_orchagent | orchagent not RUNNING; APPL_DB→ASIC_DB stalls | docker_ps still lists swss; existing ping | yes |
 | c_pause_swss | swss shows Paused; pipeline stalls silently | docker_ps still lists swss; existing ping | yes |
@@ -448,7 +448,7 @@ Container roles (database/swss/syncd/bgp/lldp/…); CONFIG_DB tables and the dec
 
 ### Expected chaos effects per option (timings)
 
-- **c_stop_swss:** swss leaves `docker ps` immediately; feature may still read enabled; new config no longer programs; existing h1↔h2 may keep flowing `[VERIFY-ON-LAB]`. Recovery on start = a rebuild period (tens of seconds?) `[VERIFY-ON-LAB]`.
+- **c_stop_swss:** swss leaves `docker ps` immediately; feature may still read enabled; new config no longer programs; existing h1↔h3 may keep flowing `[VERIFY-ON-LAB]`. Recovery on start = a rebuild period (tens of seconds?) `[VERIFY-ON-LAB]`.
 - **c_vlan_churn_50:** CONFIG_DB dbsize +≈50 immediately; APPL_DB then ASIC_DB rise after it — the visible lag; no data-plane loss. Catch-up time load-dependent `[VERIFY-ON-LAB]`.
 - **c_stop_orchagent:** orchagent STOPPED; APPL_DB fills but ASIC_DB stops changing; existing forwarding persists; auto-restart may intervene `[VERIFY-ON-LAB]`.
 - **c_pause_swss:** swss shows Paused; pipeline silently stalls; no crash/log; unpause resumes.
@@ -591,7 +591,7 @@ config reload, vlan30, ethernet4, leaf1
 3. ★ In what order do the databases reflect the shutdown, and why that order?
 4. Which process reacts to the CONFIG_DB change for a port?
 5. What does `oper_status=down` in STATE_DB confirm that CONFIG_DB cannot?
-6. Would traffic to h2 drop during this trace? Explain.
+6. Would traffic to h3 drop during this trace? Explain.
 7. How is this the same machinery as the Vlan30 pipeline demo?
 8. If APPL_DB never got the change, which container would you suspect?
 
@@ -607,7 +607,7 @@ config reload, vlan30, ethernet4, leaf1
 
 ## Verify-On-Lab
 
-1. **swss stop, data-plane persistence:** with swss stopped, does h1↔h2 keep forwarding, and for how long? Recovery time on `start`; does syncd need co-restart?
+1. **swss stop, data-plane persistence:** with swss stopped, does h1↔h3 keep forwarding, and for how long? Recovery time on `start`; does syncd need co-restart?
 2. **Pipeline key formats:** confirm APPL_DB `VLAN_TABLE:Vlan30` key shape and that an ASIC_DB SAI VLAN object appears on `config vlan add 30`; capture per-stage timing for propagation_lag.
 3. **VIDTORID key name** in ASIC_DB (exact key for the VID→RID dump).
 4. **COUNTERS poll interval** on vs; lag between traffic and visible counter movement.

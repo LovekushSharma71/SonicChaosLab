@@ -1,0 +1,305 @@
+{
+  "name": "chaoslab",
+  "type": "clab",
+  "clab": {
+    "config": {
+      "prefix": "clab",
+      "mgmt": {
+        "network": "clab",
+        "bridge": "br-116785c24c87",
+        "ipv4-subnet": "172.20.20.0/24",
+        "ipv4-gw": "172.20.20.1",
+        "ipv6-subnet": "3fff:172:20:20::/64",
+        "ipv6-gw": "3fff:172:20:20::1",
+        "external-access": true
+      }
+    }
+  },
+  "ssh-pub-keys": ["ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCpRs1MNBLdzxyL4SCvTV9h3dvEbYcQDNL+GbpeatUAS0qU4GYJmkit2cCIxr1XEA9vpu7DDfdwHmiKjHeHz6TZEx/6w1Ncw59Esu0TRICYcS54zwSMKRQ3TTLO2d+B95lhwBEJu+aHjGWihknf6OON6CZPVyUCkpC0E+olGDNKuBCJWhutsWE0FQ4RwlkNONyl8tzQsn0WymTNgoxcpdDY7bo4+GH6Dm4xpPdbQfk3+U4vd7MMoM7YXulZiTV24B3ayJyU50ZP6RV4YA2TadTYxZEccFTu0jgW8d7AVlSwHxspKHN3c2T+fJlqPV+rtb8NNTpaC1SiwAO0jdOMyOuh","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKhUDoK+ul7Vj8eFqD/vjPlWwB0ggTyCG4mHcju0uDz2"],
+  "nodes": {
+    "h1": {
+      "index": "0",
+      "shortname": "h1",
+      "longname": "clab-chaoslab-h1",
+      "fqdn": "h1.chaoslab.io",
+      "group": "",
+      "labdir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h1",
+      "kind": "linux",
+      "image": "alpine:latest",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.2",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::2",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h1",
+        "clab-node-longname": "clab-chaoslab-h1",
+        "clab-node-name": "h1",
+        "clab-node-type": "",
+        "clab-owner": "ec2-user",
+        "clab-topo-file": "/home/ec2-user/SonicChaosLab/topo/chaoslab.clab.yml",
+        "containerlab": "chaoslab"
+      },
+      "port-bindings": [
+      ]
+    },
+    "h2": {
+      "index": "1",
+      "shortname": "h2",
+      "longname": "clab-chaoslab-h2",
+      "fqdn": "h2.chaoslab.io",
+      "group": "",
+      "labdir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h2",
+      "kind": "linux",
+      "image": "alpine:latest",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.6",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::6",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h2",
+        "clab-node-longname": "clab-chaoslab-h2",
+        "clab-node-name": "h2",
+        "clab-node-type": "",
+        "clab-owner": "ec2-user",
+        "clab-topo-file": "/home/ec2-user/SonicChaosLab/topo/chaoslab.clab.yml",
+        "containerlab": "chaoslab"
+      },
+      "port-bindings": [
+      ]
+    },
+    "h3": {
+      "index": "2",
+      "shortname": "h3",
+      "longname": "clab-chaoslab-h3",
+      "fqdn": "h3.chaoslab.io",
+      "group": "",
+      "labdir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h3",
+      "kind": "linux",
+      "image": "alpine:latest",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.4",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::4",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h3",
+        "clab-node-longname": "clab-chaoslab-h3",
+        "clab-node-name": "h3",
+        "clab-node-type": "",
+        "clab-owner": "ec2-user",
+        "clab-topo-file": "/home/ec2-user/SonicChaosLab/topo/chaoslab.clab.yml",
+        "containerlab": "chaoslab"
+      },
+      "port-bindings": [
+      ]
+    },
+    "h4": {
+      "index": "3",
+      "shortname": "h4",
+      "longname": "clab-chaoslab-h4",
+      "fqdn": "h4.chaoslab.io",
+      "group": "",
+      "labdir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h4",
+      "kind": "linux",
+      "image": "alpine:latest",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.7",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::7",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h4",
+        "clab-node-longname": "clab-chaoslab-h4",
+        "clab-node-name": "h4",
+        "clab-node-type": "",
+        "clab-owner": "ec2-user",
+        "clab-topo-file": "/home/ec2-user/SonicChaosLab/topo/chaoslab.clab.yml",
+        "containerlab": "chaoslab"
+      },
+      "port-bindings": [
+      ]
+    },
+    "leaf1": {
+      "index": "4",
+      "shortname": "leaf1",
+      "longname": "clab-chaoslab-leaf1",
+      "fqdn": "leaf1.chaoslab.io",
+      "group": "",
+      "labdir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/leaf1",
+      "kind": "sonic-vs",
+      "image": "docker-sonic-vs:latest",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.3",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::3",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-node-group": "",
+        "clab-node-kind": "sonic-vs",
+        "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/leaf1",
+        "clab-node-longname": "clab-chaoslab-leaf1",
+        "clab-node-name": "leaf1",
+        "clab-node-type": "",
+        "clab-owner": "ec2-user",
+        "clab-topo-file": "/home/ec2-user/SonicChaosLab/topo/chaoslab.clab.yml",
+        "containerlab": "chaoslab"
+      },
+      "port-bindings": [
+      ]
+    },
+    "leaf2": {
+      "index": "5",
+      "shortname": "leaf2",
+      "longname": "clab-chaoslab-leaf2",
+      "fqdn": "leaf2.chaoslab.io",
+      "group": "",
+      "labdir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/leaf2",
+      "kind": "sonic-vs",
+      "image": "docker-sonic-vs:latest",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.5",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::5",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-node-group": "",
+        "clab-node-kind": "sonic-vs",
+        "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/leaf2",
+        "clab-node-longname": "clab-chaoslab-leaf2",
+        "clab-node-name": "leaf2",
+        "clab-node-type": "",
+        "clab-owner": "ec2-user",
+        "clab-topo-file": "/home/ec2-user/SonicChaosLab/topo/chaoslab.clab.yml",
+        "containerlab": "chaoslab"
+      },
+      "port-bindings": [
+      ]
+    }
+  },
+  "links": [
+    {
+      "endpoints": {
+        "a": {
+          "node": "leaf1",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:a8:53:5d",
+          "peer": "z"
+        },
+        "z": {
+          "node": "leaf2",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:6e:e1:69",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "leaf1",
+          "interface": "eth2",
+          "mac": "aa:c1:ab:19:57:d1",
+          "peer": "z"
+        },
+        "z": {
+          "node": "leaf2",
+          "interface": "eth2",
+          "mac": "aa:c1:ab:15:ff:9b",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "leaf1",
+          "interface": "eth3",
+          "mac": "aa:c1:ab:1b:ba:d5",
+          "peer": "z"
+        },
+        "z": {
+          "node": "h1",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:67:b4:ee",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "leaf1",
+          "interface": "eth4",
+          "mac": "aa:c1:ab:cc:75:84",
+          "peer": "z"
+        },
+        "z": {
+          "node": "h2",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:51:90:77",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "leaf2",
+          "interface": "eth3",
+          "mac": "aa:c1:ab:d3:b6:3f",
+          "peer": "z"
+        },
+        "z": {
+          "node": "h3",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:3e:8e:85",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "leaf2",
+          "interface": "eth4",
+          "mac": "aa:c1:ab:e3:f4:04",
+          "peer": "z"
+        },
+        "z": {
+          "node": "h4",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:9a:cf:9f",
+          "peer": "a"
+        }
+      }
+    }
+  ]
+}

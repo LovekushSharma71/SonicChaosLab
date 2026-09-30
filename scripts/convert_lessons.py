@@ -35,7 +35,7 @@ FACT_ENUM = [
     "redis_keys",
     "propagation_lag",
 ]
-TARGET_RE = re.compile(r"^(leaf1|leaf2|h1|h2):")
+TARGET_RE = re.compile(r"^(leaf1|leaf2|h1|h2|h3|h4):")
 DASH = r"[—–]"
 
 

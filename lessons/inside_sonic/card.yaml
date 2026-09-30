@@ -58,7 +58,7 @@ healthy_state_expectations: '- `docker ps` and `show feature status` agree: data
 
   - h1→10.0.1.1 and h1→10.0.2.10: 0% loss.'
 expected_chaos_effects:
-  c_stop_swss: swss leaves `docker ps` immediately; feature may still read enabled; new config no longer programs; existing h1↔h2 may keep flowing `[VERIFY-ON-LAB]`. Recovery on start = a rebuild period (tens of seconds?) `[VERIFY-ON-LAB]`.
+  c_stop_swss: swss leaves `docker ps` immediately; feature may still read enabled; new config no longer programs; existing h1↔h3 may keep flowing `[VERIFY-ON-LAB]`. Recovery on start = a rebuild period (tens of seconds?) `[VERIFY-ON-LAB]`.
   c_vlan_churn_50: CONFIG_DB dbsize +≈50 immediately; APPL_DB then ASIC_DB rise after it — the visible lag; no data-plane loss. Catch-up time load-dependent `[VERIFY-ON-LAB]`.
   c_stop_orchagent: orchagent STOPPED; APPL_DB fills but ASIC_DB stops changing; existing forwarding persists; auto-restart may intervene `[VERIFY-ON-LAB]`.
   c_pause_swss: swss shows Paused; pipeline silently stalls; no crash/log; unpause resumes.

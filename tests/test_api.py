@@ -39,7 +39,7 @@ def test_health_and_topology(client):
     health = client.get("/health").json()
     assert health["status"] == "ok" and health["provider"] == "fake"
     topo = client.get("/lab/topology").json()
-    assert {node["name"] for node in topo["nodes"]} == {"leaf1", "leaf2", "h1", "h2"}
+    assert {node["name"] for node in topo["nodes"]} == {"leaf1", "leaf2", "h1", "h2", "h3", "h4"}
 
 
 def test_lab_status_mock(client):

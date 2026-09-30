@@ -35,9 +35,9 @@ make setup     # venv + deps + .env + convert & validate lessons
 make run       # guided lesson loop on the mock lab + fake model
 ```
 
-`make run` launches the catalogue, then walks a lesson: teach → observe (grounded baseline
-explanation) → Q&A → break something → before/after diff + grounded impact explanation → restore.
-No containerlab, no keys required.
+`make run` opens the interactive shell (`SonicChaosLab>`). Type `lessons` for the catalogue, then
+walk a lesson: teach → observe (grounded baseline explanation) → Q&A → break something →
+before/after diff + grounded impact explanation → restore. No containerlab, no keys required.
 
 ## Quickstart B — full lab (x86 host)
 
@@ -45,10 +45,11 @@ Requires an **x86 Linux host** with Docker (sonic-vs is amd64-only; ~8 GB RAM). 
 [topo/README.md](topo/README.md).
 
 ```bash
+make lab-bootstrap                       # one-time: install containerlab + fetch the sonic-vs image
 make lab-up                              # containerlab deploy + poll until leafs answer
 chaoslab settings set lab_mode local     # talk to the real lab
 chaoslab settings set provider anthropic # optional: real explanations (needs ANTHROPIC_API_KEY)
-chaoslab select bgp_reconvergence        # run the flagship lesson live
+chaoslab lesson bgp_reconvergence        # run the flagship lesson live
 make lab-down                            # tear the lab down
 ```
 
@@ -80,7 +81,7 @@ config-set batch allowlist}
     OG -->|fail| FB[Labeled card fallback] --> API
     OG --> CM
     DS[(Demo script)] -->|demo_mode on| API
-    TM & CE & DA --> LAB[(containerlab: leaf1,leaf2,h1,h2)]
+    TM & CE & DA --> LAB[(containerlab: leaf1,leaf2,h1–h4)]
 ```
 
 All shell/docker access is confined to `lab/adapter.py` and `lab/topology.py`. The CLI and API are
@@ -112,19 +113,22 @@ ui/                   # placeholder — see note below
 |---|---|
 | `chaoslab --help` | Full command reference |
 | `chaoslab up` / `chaoslab down` | Deploy / destroy the containerlab topology |
-| `chaoslab select [lesson-id]` | Lesson catalogue → guided loop (arrow-key menus); id jumps straight in |
-| `chaoslab run -cmd "<command\|instruction>"` | Experiment mode: run a read-only command with a grounded explanation |
+| `chaoslab shell` | Interactive `SonicChaosLab>` prompt accepting every command (prefix optional) |
+| `chaoslab lessons` | Lesson catalogue → guided loop (arrow-key menus; Back returns here) |
+| `chaoslab lesson <id>` | Jump straight into one lesson |
+| `chaoslab run -cmd "<command\|instruction>"` | Free experiment mode: safety-gated read-only command on the lab (raw output) |
 | `chaoslab settings [list\|get k\|set k v]` | App settings (provider, model, lab_mode, max_questions, demo_mode, …) |
 | `chaoslab config get <node>` | Dump the node's running config (CONFIG_DB view) |
 | `chaoslab config set <node> "<line>" ...` | Apply SONiC `config` set-family lines (allowlisted, atomic, confirmed) |
 | `chaoslab topology` | Topology info + diagram |
 | `chaoslab status` | One-shot health: provider reachable? lab deployed? nodes ready? |
-| `chaoslab reset` | Restore the lab baseline (clears active chaos) |
+| `chaoslab reset` | Restore the lab baseline (re-apply bound configs + startup ports; clears session state) |
 | `chaoslab transcript` | Export the current/last session transcript |
 | `chaoslab version` | Version info |
 
-In-session keys: arrow-key menus everywhere; every menu shows `← Back`; `Continue` advances;
-`Quit` saves progress and exits (resume with `chaoslab select`).
+In-session keys: arrow-key menus everywhere; `↑ Lesson menu` goes up one level (step → lesson menu
+→ catalogue) and `← Previous step` steps back sequentially; `Continue` advances; `Quit` saves
+progress and exits (resume with `chaoslab lessons`).
 
 ---
 
@@ -133,14 +137,16 @@ In-session keys: arrow-key menus everywhere; every menu shows `← Back`; `Conti
 | Target | What it does |
 |---|---|
 | `make setup` | venv + `pip install -e ".[dev]"` + copy `.env` + convert & validate lessons |
-| `make run` | `chaoslab select` (mock + fake out of the box) |
+| `make run` | `chaoslab shell` — interactive prompt (mock + fake out of the box) |
 | `make api` | uvicorn dev server for the §5.2 API |
 | `make test` | pytest — passes with no network, no lab, no keys |
 | `make golden` | run the golden-set harness on the fake provider |
 | `make lint` / `make format` | ruff check / ruff format |
 | `make build` | `python -m build` → wheel + sdist |
 | `make convert-lessons` | regenerate `lessons/<id>/` YAML from `lessons/<id>.md` |
+| `make lab-bootstrap` | one-time host setup: install containerlab + fetch the sonic-vs image |
 | `make lab-up` / `make lab-down` / `make lab-status` | containerlab lifecycle (graceful if absent) |
+| `make lab-reset` | restore the lab baseline (`chaoslab reset`) |
 | `make demo-answers` | generate `demo_script.yaml` via the configured provider |
 | `make clean` / `make clean-all` | remove artifacts / also remove the venv |
 | `make all` | setup + lint + test + build |

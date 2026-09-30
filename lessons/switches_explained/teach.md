@@ -34,7 +34,7 @@ Admin down forces the operational state down. Admin up guarantees nothing — it
 
 **On SONiC.** `show vlan brief` prints one block per VLAN: its ID, the IP address configured on it (more on that in a moment), member ports, and each member's tagging mode. `show vlan config` shows the same membership as flat rows — easier to eyeball the Mode column. In this lab: leaf1 has Vlan10 with exactly one member, Ethernet8, untagged — that's h1's access port. And Vlan10 carries the address 10.0.1.1/24: the switch itself owns an IP *inside* the VLAN. Hold that thought — it is the secret door out of the L2 world, and scenario S8 walks through it.
 
-**Boundaries.** VLANs isolate; they never connect. Getting from Vlan10 to Vlan20 (h1 to h2) requires routing — Lesson 3's whole subject. Also: membership is configuration, not discovery; the switch will happily enforce a wrong VLAN assignment, which is exactly what one of the chaos options exploits.
+**Boundaries.** VLANs isolate; they never connect. Getting from Vlan10 to Vlan20 (h1 to h3) requires routing — Lesson 3's whole subject. Also: membership is configuration, not discovery; the switch will happily enforce a wrong VLAN assignment, which is exactly what one of the chaos options exploits.
 
 ### SECTION: t_mac — S4: The MAC table — learning by listening, flooding when ignorant
 
@@ -86,17 +86,17 @@ There is a third name to file away: **CONFIG_DB** (database 4) — your *intent*
 
 **Boundaries.** On this virtual switch, counter freshness is best-effort — trends are trustworthy, exact per-packet accounting is not. Queue, PFC, and watermark counters exist on real systems and are out of scope here.
 
-### SECTION: t_boundary — S8: The edge of the L2 world — why h1 never "switches" to h2
+### SECTION: t_boundary — S8: The edge of the L2 world — why h1 never "switches" to h3
 
-**Essence.** h1 (10.0.1.10, Vlan10 on leaf1) can reach h2 (10.0.2.10, Vlan20 on leaf2) — you will prove it with a ping — yet no switch ever "switches" a frame to h2. The frame's journey ends at the VLAN border, and something categorically different (routing) carries the payload onward. This scenario makes you *see* the border in the tables, and it is the doorway into Lesson 3.
+**Essence.** h1 (10.0.1.10, Vlan10 on leaf1) can reach h3 (10.0.2.10, Vlan20 on leaf2) — you will prove it with a ping — yet no switch ever "switches" a frame to h3. The frame's journey ends at the VLAN border, and something categorically different (routing) carries the payload onward. This scenario makes you *see* the border in the tables, and it is the doorway into Lesson 3.
 
 **Mechanism.** Two ideas, both small:
 
 - **ARP** (Address Resolution Protocol): IP-speaking hosts need a MAC to put on the frame. ARP is the shouted question — "who has IP X? tell me your MAC" — sent as a broadcast, answered by the owner. Every host keeps a little cache of answers.
 - **Default gateway:** before ARPing, a host compares the destination IP with its own subnet. Same subnet → ARP for the destination directly. *Different* subnet → don't even try; instead hand the packet to a designated local router, the default gateway, by ARPing for the *gateway's* IP and addressing the frame to the *gateway's* MAC.
 
-10.0.2.10 is outside h1's 10.0.1.0/24, so h1 wraps the packet for h2 inside a frame addressed to 10.0.1.1's MAC — leaf1's own Vlan10 interface. At Layer 2, h1 only ever converses with its gateway. h2's MAC never crosses into Vlan10, never gets learned, never appears.
+10.0.2.10 is outside h1's 10.0.1.0/24, so h1 wraps the packet for h3 inside a frame addressed to 10.0.1.1's MAC — leaf1's own Vlan10 interface. At Layer 2, h1 only ever converses with its gateway. h3's MAC never crosses into Vlan10, never gets learned, never appears.
 
-**On SONiC.** The observe step pings h2 from h1 (it succeeds — the two switches route it; how they know the way is Lesson 3's flagship topic), then collects the evidence: `show mac` on leaf1 — h1's MAC is there, h2's is nowhere; `show arp` on leaf1 — the switch resolved 10.0.1.10 on Vlan10 (the gateway keeps its own ARP cache, because routing made it a *sender* of frames toward h1); and h1's own neighbor cache (`ip neigh show`) — containing the gateway, not h2. Working ping + absent MAC = the packet was routed, not switched. That is the boundary.
+**On SONiC.** The observe step pings h3 from h1 (it succeeds — the two switches route it; how they know the way is Lesson 3's flagship topic), then collects the evidence: `show mac` on leaf1 — h1's MAC is there, h3's is nowhere; `show arp` on leaf1 — the switch resolved 10.0.1.10 on Vlan10 (the gateway keeps its own ARP cache, because routing made it a *sender* of frames toward h1); and h1's own neighbor cache (`ip neigh show`) — containing the gateway, not h3. Working ping + absent MAC = the packet was routed, not switched. That is the boundary.
 
 **Boundaries.** How leaf1 knows that 10.0.2.0/24 lives behind leaf2 — the routing table, BGP, reconvergence — is deliberately left dark until Lesson 3. Today you only need to know the L2 world has an edge, and you've now stood on it.

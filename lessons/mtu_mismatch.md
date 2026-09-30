@@ -5,13 +5,13 @@
 - **id:** `mtu_mismatch`
 - **difficulty:** core
 - **requires:** `switches_explained`, `inside_sonic`, `bgp_reconvergence` (assumes: frames/MTU column, the config pipeline, ECMP + control-vs-data plane)
-- **target image:** docker-sonic-vs, branch **202405** (Containerlab: leaf1/leaf2 SONiC, h1/h2 hosts; same BGP/ECMP topology as Lesson 3)
-- **devices used in this lesson:** `leaf1`, `leaf2`, `h1`, `h2`
+- **target image:** docker-sonic-vs, branch **202405** (Containerlab: leaf1/leaf2 SONiC, h1–h4 hosts; same BGP/ECMP topology as Lesson 3)
+- **devices used in this lesson:** `leaf1`, `leaf2`, `h1`, `h3`
 - **lab prerequisites assumed by this lesson (bake into topology):**
   - full Lesson-3 topology at baseline: eBGP established, 10.0.2.0/24 reachable from h1 via ECMP over Ethernet0/Ethernet4
   - **all ports MTU 9100** at baseline (inter-switch AND access AND host `eth1`), so a jumbo path exists end to end
-  - h1 = 10.0.1.10/24 (gw 10.0.1.1); h2 = 10.0.2.10/24 (gw 10.0.2.1); both host `eth1` MTU 9100
-- **command execution targets:** `leaf1:`/`leaf2:` = docker exec into SONiC vs; `h1:`/`h2:` = host containers. Linux DF-ping: `ping -M do -s <payload>` sets the Don't-Fragment bit.
+  - h1 = 10.0.1.10/24 (gw 10.0.1.1); h3 = 10.0.2.10/24 (gw 10.0.2.1); both host `eth1` MTU 9100
+- **command execution targets:** `leaf1:`/`leaf2:` = docker exec into SONiC vs; `h1:`/`h3:` = host containers. Linux DF-ping: `ping -M do -s <payload>` sets the Don't-Fragment bit.
 - **packet-size arithmetic used throughout:** IP packet size = ICMP payload + 8 (ICMP header) + 20 (IP header) = payload + 28. So payload **1472** → 1500-byte packet (fits MTU 1500); payload **8972** → 9000-byte packet (needs a jumbo path, fits MTU 9100 with margin).
 - **source URLs relied on:**
   - SONiC CLI Reference (202405) — Interfaces (`config interface mtu`, `show interfaces status` MTU column): <https://github.com/sonic-net/sonic-utilities/blob/202405/doc/Command-Reference.md#interfaces>
@@ -37,7 +37,7 @@
 | 2 | o_mtu | observe | S1: Read every port's MTU on both leafs | core |
 | 3 | q_mtu | qna | S1: Questions — MTU basics | core |
 | 4 | t_bigpath | teach | S2: Proving the jumbo path — a DF ping size sweep | core |
-| 5 | o_bigpath | observe | S2: h1 to h2 at 1472 and 8972 payload with DF set | core |
+| 5 | o_bigpath | observe | S2: h1 to h3 at 1472 and 8972 payload with DF set | core |
 | 6 | q_bigpath | qna | S2: Questions — packet sizes & overhead | core |
 | 7 | t_mtu_redis | teach | S3: Where MTU lives — CONFIG_DB intent to kernel reality | core |
 | 8 | o_mtu_redis | observe | S3: PORT.mtu across CONFIG_DB, APPL_DB, and the netdev | core |
@@ -85,7 +85,7 @@ So MTU is the perfect "up but broken" trap: the link is administratively and ope
 
 So `ping -M do -s 1472` succeeding proves the path carries at least 1500; `ping -M do -s 8972` succeeding proves the path carries at least 9000 — i.e., the jumbo fabric truly works end to end. When you later break MTU, the *small* sweep keeps passing while the *large* one dies: the signature of an MTU fault.
 
-**On SONiC.** The observe step runs the sweep from h1 to h2: `ping -M do -s 1472` (must pass at baseline) then `ping -M do -s 8972` (must also pass at baseline, proving the 9100 fabric). Both succeeding is your green light. Keep this exact pair — the restore step re-runs it to confirm healing, and every chaos option is graded by which half fails.
+**On SONiC.** The observe step runs the sweep from h1 to h3: `ping -M do -s 1472` (must pass at baseline) then `ping -M do -s 8972` (must also pass at baseline, proving the 9100 fabric). Both succeeding is your green light. Keep this exact pair — the restore step re-runs it to confirm healing, and every chaos option is graded by which half fails.
 
 **Boundaries.** This proves *size* capability, not throughput or latency. And it proves the path *as currently hashed* — a subtlety that matters under ECMP (scenario S5), where different flows may take different-MTU links.
 
@@ -139,7 +139,7 @@ The essence is: **status and routes lie about size; only a DF probe tells the tr
 
 ### SECTION: t_bgp_mtu — S7: Why BGP survives what your data doesn't (MSS)
 
-**Essence.** Here is the cruel twist that makes MTU faults so confusing: you break the fabric with a 1500-byte MTU, and **BGP stays perfectly Established** while h1→h2 data dies. The control plane shrugs off the very fault that blackholes user traffic. Understanding why closes the loop on "up but broken."
+**Essence.** Here is the cruel twist that makes MTU faults so confusing: you break the fabric with a 1500-byte MTU, and **BGP stays perfectly Established** while h1→h3 data dies. The control plane shrugs off the very fault that blackholes user traffic. Understanding why closes the loop on "up but broken."
 
 **Mechanism.** BGP runs over TCP, and TCP negotiates an **MSS** (maximum segment size) at connection setup — each side advertises how big a segment it will accept, derived from its local MTU, and TCP then *never sends a segment larger than the smaller MSS*. In other words, TCP does its own miniature PMTUD at the start and keeps its packets small enough to fit. BGP's messages (OPENs, tiny periodic KEEPALIVEs, modest UPDATEs) are small anyway and comfortably under even a 1500 MTU. So the session's packets always fit, even across the narrowed link — while h1's *bulk* data, which happily emits big packets, slams into the 1500 ceiling and is dropped. The session is a small-packet conversation; the data is a big-packet firehose. Same broken link, opposite outcomes — the ultimate proof that "control plane healthy" and "data plane working" are independent (Lesson 3), now with MTU as the wedge.
 
@@ -283,7 +283,7 @@ All options are restorable to baseline (every port back to MTU 9100, all rules r
   - `h1: ip link set eth1 mtu 9100`
   - `h1: ping -M do -s 8972 -c 3 10.0.2.10`
 - **expected effects (words):** The narrow hop is now the *source itself*. h1 simply cannot emit a 9000-byte DF packet — `ping -M do -s 8972` fails **locally** with a "message too long"/"local error" before anything leaves h1, a categorically different signature from an in-network silent drop. Small pings and BGP unaffected. Teaches that "the network is broken" is sometimes "the endpoint is misconfigured," and that source-local errors are *loud* where in-network MTU drops are *silent*. Recovery: set eth1 back to 9100.
-- **plan-B variant:** narrow **h2's** eth1 instead — the far endpoint; return-direction jumbo replies fail while h1's forward path is fine.
+- **plan-B variant:** narrow **h3's** eth1 instead — the far endpoint; return-direction jumbo replies fail while h1's forward path is fine.
 - **injection-failed tell:** `h1: ip link show eth1` still shows mtu 9100 → the host change didn't take.
 
 ---
@@ -296,7 +296,7 @@ All options are restorable to baseline (every port back to MTU 9100, all rules r
   - `leaf1: sudo config interface mtu Ethernet8 9100`
   - `h1: ping -M do -s 8972 -c 3 10.0.2.10`
 - **expected effects (words):** h1 stays 9100 but its *first hop into the switch* (Ethernet8) is 1500. Oversized frames from h1 hit the narrow ingress port; the DF jumbo ping fails at the very first hop while everything else looks perfect. A single-port fault at the network edge rather than in the fabric — tests whether the learner checks the access port, not just the inter-switch links. Recovery: Ethernet8 back to 9100.
-- **plan-B variant:** narrow **leaf2's** Ethernet8 (h2's access port) — breaks only the return direction.
+- **plan-B variant:** narrow **leaf2's** Ethernet8 (h3's access port) — breaks only the return direction.
 - **injection-failed tell:** `show interfaces status` shows Ethernet8 still 9100 → write didn't take.
 
 ---
@@ -407,7 +407,7 @@ MTU/jumbo/path-MTU; DF-ping size sweep and payload+28 arithmetic; PORT.mtu throu
 ### Healthy-state expectations (baseline, in words)
 
 - Every port on both leafs: MTU 9100, Oper up, Admin up.
-- h1→h2: plain ping 0% loss; `ping -M do -s 1472` 0% loss; `ping -M do -s 8972` 0% loss (the jumbo fabric proven end to end).
+- h1→h3: plain ping 0% loss; `ping -M do -s 1472` 0% loss; `ping -M do -s 8972` 0% loss (the jumbo fabric proven end to end).
 - Ethernet0 `mtu` = 9100 in CONFIG_DB, in APPL_DB PORT_TABLE, and in the status column — intent, application, reality agree.
 - `show ip route 10.0.2.0/24`: two next-hops (both ECMP members at 9100).
 - `show bgp summary`: both sessions Established.
@@ -475,7 +475,7 @@ fragmentation needed, frag needed, ping, ping -s, ping -m do, size sweep,
 mss, maximum segment size, tcp, clamp, up but broken, detection, troubleshoot,
 ecmp, hashing, intermittent, some flows, netdev, ip link, port mtu,
 config interface mtu, config_db mtu, appl_db mtu, mtu column, ethernet0, ethernet4,
-ethernet8, leaf1, leaf2, h1, h2, 8972, 1472
+ethernet8, leaf1, leaf2, h1, h3, 8972, 1472
 ```
 
 ### Question bank (8 per qna step; TOP 3 marked ★; ordered easy → deep)
@@ -541,7 +541,7 @@ ethernet8, leaf1, leaf2, h1, h2, 8972, 1472
 8. Why is "only a DF probe tells the truth" the core of this method?
 
 #### q_bgp_mtu
-1. ★ Why does BGP stay Established when a 1500 MTU is blackholing h1→h2 jumbo data?
+1. ★ Why does BGP stay Established when a 1500 MTU is blackholing h1→h3 jumbo data?
 2. ★ What is MSS, and how does it keep TCP under the MTU ceiling?
 3. ★ How is this the ultimate example of control plane vs data plane?
 4. Why are BGP's packets small in the first place?
@@ -552,7 +552,7 @@ ethernet8, leaf1, leaf2, h1, h2, 8972, 1472
 
 ## Verify-On-Lab
 
-1. **Baseline jumbo path:** confirm `ping -M do -s 8972` h1→h2 succeeds at 9100 everywhere; capture typical rtt.
+1. **Baseline jumbo path:** confirm `ping -M do -s 8972` h1→h3 succeeds at 9100 everywhere; capture typical rtt.
 2. **c_mtu1500_one_side direction:** determine which direction/end enforces the drop (leaf1 ingress vs egress) and how reliably a single ping tuple lands on the narrowed Ethernet0 (hashing).
 3. **ECMP probe variability:** for c_mtu1500_one_link, measure how often repeated DF-8972 pings pass vs fail (hash distribution); decide how many probes the parser needs.
 4. **MTU pipeline key formats:** confirm APPL_DB `PORT_TABLE:Ethernet0` carries `mtu`; confirm the netdev MTU tracks the config.

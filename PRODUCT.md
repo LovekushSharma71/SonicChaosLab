@@ -55,9 +55,11 @@ The grounded **explain → break → explain-the-impact** loop on a real network
 | Command | Effect |
 |---|---|
 | `chaoslab help` | Full command reference + in-session key bindings |
+| `chaoslab shell` | Interactive shell: a `SonicChaosLab>` prompt accepting every command below (the `chaoslab` prefix is optional); nothing runs until asked — this is what `make run` opens |
 | `chaoslab up` / `chaoslab down` | Deploy / destroy the Containerlab topology (up polls until SONiC CLI responds on both leafs) |
-| `chaoslab select [lesson-id]` | Lesson catalogue — arrow-key navigation across lessons → sublessons (steps / chaos scenarios); with an id, jumps straight in. Starts the guided loop |
-| `chaoslab run -cmd "<command \| instruction>"` | **Experiment mode** (see below): execute a real, topic-relevant, read-only command on the live lab and get an on-the-fly grounded explanation |
+| `chaoslab lessons` | Lesson catalogue — arrow-key navigation across lessons → sublessons (steps / chaos scenarios). Starts the guided loop |
+| `chaoslab lesson <lesson-id>` | Jump straight into one lesson's guided loop (no catalogue hop) |
+| `chaoslab run -cmd "<command \| instruction>"` | **Free experiment mode** (see below): execute a read-only command on the live lab — safety allowlist only, no lesson required, raw output |
 | `chaoslab settings [list\|get k\|set k v]` | App settings: API key/provider/model, max_questions, temperatures, lab host (local/SSH), demo_mode, etc. |
 | `chaoslab config get <node>` | Switch configuration: dump the node's running config (CONFIG_DB view) |
 | `chaoslab config set <node> ...` | Switch configuration: apply one or MORE SONiC `config ...` lines in one batch (see below); set-family commands only for now |
@@ -73,20 +75,22 @@ Naming note: `settings` = the app; `config` = the switch — deliberately split 
 
 ### Navigation (in-session)
 - All menus are **arrow-key selectable** (lessons, sublessons, chaos options, suggested questions).
-- Universal keys: `Esc`/`b` = back one level (step → lesson → catalogue), `q` = quit to shell (session state saved server-side; `chaoslab select` resumes).
+- Universal keys: `Esc`/`b` = back one **menu level** (step → lesson menu → catalogue), `q` = quit to shell (session state saved server-side; `chaoslab lessons` resumes). Step menus additionally offer `← Previous step` for sequential back-stepping.
 - "Move back" is deliberately an **in-session control, not a top-level command** — navigation state lives in the orchestrator, and every menu always shows a `← Back` option so the user is never trapped.
 
-### Experiment mode (`chaoslab run -cmd`) — where the LLM shines
-User-initiated, real command execution with grounded on-the-fly explanation. Requires an active lesson (topic context); otherwise prompts to `select` first.
+### Experiment mode — where the LLM shines
+Two surfaces share one code-enforced safety gate:
+- **Standalone free mode (`chaoslab run -cmd`):** run any read-only command on the live lab with no lesson context — the safety allowlist is the only gate; raw output, no budgets, no LLM. NL instructions still map to a proposed command (deterministic table) requiring explicit confirm.
+- **In-session experiments ("Run an experiment" in Q&A menus):** lesson-scoped, relevance-gated, grounded-explained — the pipeline below.
 
-Pipeline per experiment:
+Pipeline per in-session experiment:
 1. **Relevance gate** (code): command/instruction must match the active lesson's scope (`scope_keywords` + command vocabulary). Off-topic → canned redirect (counts against redirect cap).
 2. **Safety gate** (code, allowlist): read-only commands only — `show *`, `redis-cli` reads (`keys/hget/hgetall/dbsize`), bounded `ping`, `vtysh -c "show *"`. Mutations are DENIED here — state changes happen only through the lesson's chaos flow or the explicit `chaoslab config set` path (below).
 3. **NL instruction path:** if input is natural language ("check bgp neighbors"), the LLM proposes the matching command, which is SHOWN to the user and runs only on explicit confirm — the LLM never auto-executes anything.
 4. **Execute** via device adapter → parse with known parsers (fall back to raw).
 5. **Explain**: LLM explains the output field-by-field, grounded in lesson card + current machine state + this output — fully contextual, on the fly.
 
-Budget rule: each explained experiment consumes one question slot (it is an LLM call); `--no-explain` executes free of budget.
+Budget rule: each explained in-session experiment consumes one question slot (it is an LLM call); standalone `run -cmd` never touches budgets.
 
 ### Switch configuration (`chaoslab config`)
 Direct, user-driven configuration of lab nodes — the sanctioned write path for free experimentation beyond lesson chaos.
@@ -101,14 +105,14 @@ Direct, user-driven configuration of lab nodes — the sanctioned write path for
 - **Allowlist (for now):** SONiC `config ...` set-family commands ONLY — no shell, no docker, no service operations, no redis writes. Each line validated against the allowlist before anything runs; one bad line rejects the whole batch (atomic intent).
 - **Preview + confirm:** the validated batch is echoed back and applied only on explicit confirm.
 - **Audit + safety net:** every applied batch is logged to the session transcript; `chaoslab reset` always restores the lesson baseline, so no experiment is irreversible.
-- No LLM involved in apply; to understand the *effect*, follow up with experiment mode (`chaoslab run -cmd "show ..."`) which explains against the new machine state.
+- No LLM involved in apply; to understand the *effect*, follow up with `chaoslab run -cmd "... show ..."` (raw) or an in-session experiment for a grounded explanation against the new machine state.
 
 ### Lesson flow (state machine)
 CATALOGUE → TEACH (static text, zero LLM) → BASELINE (fixed commands, facts captured) → EXPLAIN_BASELINE (grounded LLM) → QNA → CHAOS_SELECT (user picks 1 option) → INJECT → OBSERVE (after-state + diff) → EXPLAIN_IMPACT (grounded LLM) → QNA2 → RESTORE → VERIFY → SUMMARY → CATALOGUE.
 
 ### Interactivity budgets (enforced in code, never by the model)
 Two separate counters govern Q&A — one for answered questions, one for rejected ones:
-- **Question budget — 11 per lesson** (config `max_questions`; `demo_mode` forces 3). Spent ONLY when the LLM actually answers an on-topic question. Explained experiments (`run -cmd`) spend from this same budget; `--no-explain` experiments are free.
+- **Question budget — 11 per lesson** (config `max_questions`; `demo_mode` forces 3). Spent ONLY when the LLM actually answers an on-topic question. Explained in-session experiments spend from this same budget; standalone `run -cmd` is budget-free (raw output, no LLM).
 - **Redirect allowance — 2 per step.** Off-topic input (a typed question OR an off-topic experiment command) is rejected with a one-line canned redirect. Rejections never touch the question budget — you don't lose a real question by wandering — but after 2 rejections in one step the tutor stops engaging with off-topic input and auto-advances the lesson, so nobody can stall the session.
 - Each QNA state offers **3 suggested questions** (from lesson file) + "ask your own" + "run an experiment" + "continue".
 - Either limit reached → polite auto-advance; remaining budget carries to the next QNA step.
@@ -257,7 +261,7 @@ Each lesson ships an **expanded scenario set**: up to ~10 guided happy-path obse
 
 #### Lesson 1 — "Switches explained" (intro)
 - **Teaches:** what a switch actually does — the frame-forwarding decision (learn-on-source, forward vs flood), MAC table, VLAN segmentation (access ports), LLDP neighbor discovery; how SONiC exposes each of these (`show mac`, `show vlan brief`, `show lldp table`, `FDB_TABLE`/`LLDP_ENTRY_TABLE` in APPL_DB).
-- **Happy path:** ping h1→h2 to populate tables; inspect MAC table, VLAN membership, LLDP neighbors; peek the same facts in APPL_DB.
+- **Happy path:** ping h1→h3 to populate tables; inspect MAC table, VLAN membership, LLDP neighbors; peek the same facts in APPL_DB.
 - **Chaos options:** **(A) shut h1's access port** — reachability dies, MAC entry goes, port oper-down while the rest of the fabric stays healthy; **(B) clear the MAC table** (`sonic-clear fdb all`) — next ping visibly flood-then-relearns (flooding made observable; very low risk).
 - **Observation:** port oper state, MAC table before/after, ping loss, relearn behavior on restore.
 
@@ -269,7 +273,7 @@ Each lesson ships an **expanded scenario set**: up to ~10 guided happy-path obse
 
 #### Lesson 3 — "BGP in SONiC: peering & reconvergence" (flagship, vertical-slice target)
 - **Teaches:** eBGP peering, session FSM, advertise/withdraw, ECMP over parallel links, link-down fast fallover (~1–3 s) vs hold-timer (~180 s), control vs data plane.
-- **Happy path:** `show ip bgp summary`, `show ip route`, ping h1→h2; facts: neighbor states, PfxRcd, route count, ping loss.
+- **Happy path:** `show ip bgp summary`, `show ip route`, ping h1→h3; facts: neighbor states, PfxRcd, route count, ping loss.
 - **Chaos options:** shut **one** parallel link (traffic survives on the other — reroute story); shut **both** (withdrawal + session down — outage story).
 - **Observation:** neighbor `Established→Idle`, route count drop, ping loss, **measured reconvergence time**; recovery on `startup`.
 
@@ -283,7 +287,7 @@ Each lesson ships an **expanded scenario set**: up to ~10 guided happy-path obse
 
 ## 7. Lab topology & environment
 
-**4 devices — 2 SONiC virtual switches + 2 Linux hosts:**
+**6 devices — 2 SONiC virtual switches + 4 Linux hosts:**
 
 ```
 h1 ── leaf1 ══════ leaf2 ── h4
@@ -295,7 +299,7 @@ leaf1: sonic-vs, AS 65001
 h1/h2/h3/h4: alpine, access VLANs
 ```
 
-Containerlab (`topo/chaoslab.clab.yml`): leaf1/leaf2 `kind: sonic-vs` (`docker-sonic-vs:latest`), h1/h2 `kind: linux` (alpine). Links: leaf1:eth1–leaf2:eth1, leaf1:eth2–leaf2:eth2, leaf1:eth3–h1:eth1, leaf2:eth3–h2:eth1. Baseline configs in `topo/configs/` (eBGP over both /31s, access VLANs, MTU 9100 everywhere). **Reset = re-apply baseline + `config interface startup`, never redeploy.**
+Containerlab (`topo/chaoslab.clab.yml`): leaf1/leaf2 `kind: sonic-vs` (`docker-sonic-vs:latest`), h1–h4 `kind: linux` (alpine; h1/h2 on leaf1 Vlan10, h3/h4 on leaf2 Vlan20). Links: leaf1:eth1–leaf2:eth1, leaf1:eth2–leaf2:eth2, leaf1:eth3–h1:eth1, leaf1:eth4–h2:eth1, leaf2:eth3–h3:eth1, leaf2:eth4–h4:eth1. Baseline configs in `topo/configs/` (eBGP over both /31s, access VLANs, MTU 9100 everywhere). **Reset = re-apply baseline + `config interface startup`, never redeploy.**
 
 **Host requirements:** Linux x86 host (sonic-vs images are amd64-only), ~8 GB free RAM (≈2 GB+/sonic-vs). macOS/Apple Silicon: run the lab on an x86 Ubuntu cloud VM or GitHub Codespaces; the Python app can run anywhere and reach the lab (adapter isolates shell access so an SSH target can be added).
 
@@ -344,7 +348,7 @@ config-set batch allowlist}
     OG -->|fail| FB[Labeled card fallback] --> API
     OG --> CM
     DS[(Demo script)] -->|demo_mode on| API
-    TM & CE & DA --> LAB[(containerlab: leaf1,leaf2,h1,h2)]
+    TM & CE & DA --> LAB[(containerlab: leaf1,leaf2,h1–h4)]
 ```
 
 ### 8.3 LLM touchpoints (exactly four, + optional tiny 5th)

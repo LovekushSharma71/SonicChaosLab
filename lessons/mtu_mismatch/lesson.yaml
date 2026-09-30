@@ -26,7 +26,7 @@ steps:
   optional: false
 - id: o_bigpath
   kind: observe
-  title: 'S2: h1 to h2 at 1472 and 8972 payload with DF set'
+  title: 'S2: h1 to h3 at 1472 and 8972 payload with DF set'
   optional: false
 - id: q_bigpath
   kind: qna
@@ -219,7 +219,7 @@ chaos_options:
   - 'The narrow hop is now the *source itself*. h1 simply cannot emit a 9000-byte DF packet — `ping -M do -s 8972` fails **locally** with a "message too long"/"local error" before anything leaves h1, a categorically different signature from an in-network silent drop. Small pings and BGP unaffected. Teaches that "the network is broken" is sometimes "the endpoint is misconfigured," and that source-local errors are *loud* where in-network MTU drops are *silent*. Recovery: set eth1 back to 9100.'
   risk: low
   enabled: true
-  plan_b: narrow **h2's** eth1 instead — the far endpoint; return-direction jumbo replies fail while h1's forward path is fine.
+  plan_b: narrow **h3's** eth1 instead — the far endpoint; return-direction jumbo replies fail while h1's forward path is fine.
 - id: c_access_port_mtu
   label: 'Choke the front door: the access port'
   type: config
@@ -232,7 +232,7 @@ chaos_options:
   - 'h1 stays 9100 but its *first hop into the switch* (Ethernet8) is 1500. Oversized frames from h1 hit the narrow ingress port; the DF jumbo ping fails at the very first hop while everything else looks perfect. A single-port fault at the network edge rather than in the fabric — tests whether the learner checks the access port, not just the inter-switch links. Recovery: Ethernet8 back to 9100.'
   risk: medium
   enabled: false
-  plan_b: narrow **leaf2's** Ethernet8 (h2's access port) — breaks only the return direction.
+  plan_b: narrow **leaf2's** Ethernet8 (h3's access port) — breaks only the return direction.
 - id: c_tiny_mtu
   label: 'Absurdly small: 1280 on the fabric'
   type: config
@@ -357,7 +357,7 @@ qna:
     - Why do status, routes, and BGP all fail to reveal an MTU problem?
     - Which single command finally *locates* the fault once a DF probe confirms it?
     q_bgp_mtu:
-    - Why does BGP stay Established when a 1500 MTU is blackholing h1→h2 jumbo data?
+    - Why does BGP stay Established when a 1500 MTU is blackholing h1→h3 jumbo data?
     - What is MSS, and how does it keep TCP under the MTU ceiling?
     - How is this the ultimate example of control plane vs data plane?
 meta:

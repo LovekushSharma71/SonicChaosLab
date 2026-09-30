@@ -10,7 +10,8 @@
   "PORT": {
     "Ethernet0": { "admin_status": "up", "mtu": "9100", "speed": "40000", "alias": "Ethernet0" },
     "Ethernet4": { "admin_status": "up", "mtu": "9100", "speed": "40000", "alias": "Ethernet4" },
-    "Ethernet8": { "admin_status": "up", "mtu": "9100", "speed": "40000", "alias": "Ethernet8" }
+    "Ethernet8": { "admin_status": "up", "mtu": "9100", "speed": "40000", "alias": "Ethernet8" },
+    "Ethernet12": { "admin_status": "up", "mtu": "9100", "speed": "40000", "alias": "Ethernet12" }
   },
   "INTERFACE": {
     "Ethernet0": {},
@@ -22,7 +23,8 @@
     "Vlan20": { "vlanid": "20" }
   },
   "VLAN_MEMBER": {
-    "Vlan20|Ethernet8": { "tagging_mode": "untagged" }
+    "Vlan20|Ethernet8": { "tagging_mode": "untagged" },
+    "Vlan20|Ethernet12": { "tagging_mode": "untagged" }
   },
   "VLAN_INTERFACE": {
     "Vlan20": {},
@@ -31,12 +33,6 @@
   "BGP_NEIGHBOR": {
     "10.0.12.0": { "asn": "65001", "holdtime": "10", "keepalive": "3", "name": "leaf1", "nhopself": "0", "rrclient": "0" },
     "10.0.12.2": { "asn": "65001", "holdtime": "10", "keepalive": "3", "name": "leaf1", "nhopself": "0", "rrclient": "0" }
-  },
-  "BGP_GLOBALS": {
-    "default": { "local_asn": "65002", "router_id": "10.0.12.1", "fast_external_failover": "true" }
-  },
-  "BGP_GLOBALS_AF_NETWORK": {
-    "default|ipv4_unicast|10.0.2.0/24": {}
   },
   "LOOPBACK_INTERFACE": {
     "Loopback0": {},

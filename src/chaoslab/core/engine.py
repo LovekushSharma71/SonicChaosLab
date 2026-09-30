@@ -88,7 +88,7 @@ def load_last_lesson() -> str | None:
 
 
 def save_session_state(orch: Orchestrator) -> None:
-    """Persist resumable session position (§5: quit saves state; select resumes)."""
+    """Persist resumable session position (§5: quit saves state; 'chaoslab lessons' resumes)."""
     directory = settings_dir()
     directory.mkdir(parents=True, exist_ok=True)
     state = {

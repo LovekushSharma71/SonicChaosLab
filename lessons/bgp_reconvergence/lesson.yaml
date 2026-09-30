@@ -97,7 +97,7 @@ steps:
   optional: true
 - id: o_dataplane
   kind: observe
-  title: 'S8: h1 reaches h2 while both links carry traffic'
+  title: 'S8: h1 reaches h3 while both links carry traffic'
   optional: true
 - id: q_dataplane
   kind: qna
@@ -191,7 +191,7 @@ chaos_options:
   - 'leaf1: sudo config interface startup Ethernet0,Ethernet4'
   - 'h1: ping -c 5 10.0.2.10'
   expected_effects:
-  - 'Both sessions drop within ~1 s (fast-fallover). 10.0.2.0/24 loses *all* next-hops and is withdrawn from the table entirely; h1→h2 goes to 100% loss. The starkest control-plane→data-plane consequence: no route, no forwarding. Recovery: both links up → both sessions re-establish within a few seconds → route and ECMP fully return.'
+  - 'Both sessions drop within ~1 s (fast-fallover). 10.0.2.0/24 loses *all* next-hops and is withdrawn from the table entirely; h1→h3 goes to 100% loss. The starkest control-plane→data-plane consequence: no route, no forwarding. Recovery: both links up → both sessions re-establish within a few seconds → route and ECMP fully return.'
   risk: medium
   enabled: true
   plan_b: 'shut the two links on **leaf2** instead (`leaf2: sudo config interface shutdown Ethernet0,Ethernet4`) — identical effect from the peer''s side.'
@@ -232,7 +232,7 @@ chaos_options:
   - 'leaf2: vtysh -c "configure terminal" -c "router bgp 65002" -c "address-family ipv4 unicast" -c "network 10.0.2.0/24"'
   - 'h1: ping -c 3 10.0.2.10'
   expected_effects:
-  - 'The purest control-vs-data lesson. Both sessions stay perfectly Established (keepalives flow), but leaf2 sends an UPDATE **withdrawing** 10.0.2.0/24. leaf1 removes the route from its table; h1→h2 dies with `show bgp summary` looking flawless. "BGP is up" and "the route exists" are shown to be different facts. Recovery: re-originate; the UPDATE re-adds the prefix in seconds.'
+  - 'The purest control-vs-data lesson. Both sessions stay perfectly Established (keepalives flow), but leaf2 sends an UPDATE **withdrawing** 10.0.2.0/24. leaf1 removes the route from its table; h1→h3 dies with `show bgp summary` looking flawless. "BGP is up" and "the route exists" are shown to be different facts. Recovery: re-originate; the UPDATE re-adds the prefix in seconds.'
   risk: medium
   enabled: false
   plan_b: on leaf2, remove the Vlan20 IP so the *connected* origin of 10.0.2.0/24 disappears (blunter, also withdraws the prefix).
@@ -271,7 +271,7 @@ chaos_options:
   - 'leaf1: sudo systemctl start bgp'
   - 'h1: ping -c 5 10.0.2.10'
   expected_effects:
-  - 'bgpd, zebra, and fpmsyncd all die. Sessions drop (leaf2 will time out its side at hold). The revealing question: does h1→h2 keep working? If the chip retains its programmed routes, forwarding may persist even with the whole routing brain gone — control plane dead, data plane alive `[VERIFY-ON-LAB: whether ROUTE_TABLE/ASIC route lingers and for how long]`. Recovery: start bgp → sessions re-establish → fpmsyncd re-syncs routes into APPL_DB.'
+  - 'bgpd, zebra, and fpmsyncd all die. Sessions drop (leaf2 will time out its side at hold). The revealing question: does h1→h3 keep working? If the chip retains its programmed routes, forwarding may persist even with the whole routing brain gone — control plane dead, data plane alive `[VERIFY-ON-LAB: whether ROUTE_TABLE/ASIC route lingers and for how long]`. Recovery: start bgp → sessions re-establish → fpmsyncd re-syncs routes into APPL_DB.'
   risk: medium
   enabled: true
   plan_b: '`leaf1: docker exec bgp supervisorctl stop bgpd` — kill only bgpd while zebra/fpmsyncd live (subtler: existing routes may persist in zebra→APPL_DB longer).'
@@ -369,7 +369,7 @@ qna:
     - Which prefix does leaf1 advertise, and which does it receive?
     - Why does leaf1 receive 10.0.2.0/24 over both links?
     q_routes:
-    - How does the router pick between 10.0.1.0/24 and 10.0.2.0/24 for a packet to h2?
+    - How does the router pick between 10.0.1.0/24 and 10.0.2.0/24 for a packet to h3?
     - What do the C and B source codes mean in `show ip route`?
     - Why is 10.0.2.0/24 a BGP route while 10.0.12.0/31 is connected?
     q_ecmp:
@@ -390,7 +390,7 @@ qna:
     - What do rising KEEPALIVE counts versus a jump in UPDATEs tell you?
     q_dataplane:
     - What's the difference between the control plane and the data plane here?
-    - Why might h1→h2 keep working after you stop the bgp container?
+    - Why might h1→h3 keep working after you stop the bgp container?
     - How can the session be Established while the ping fails?
 meta:
   verified_on: UNVERIFIED — docker-sonic-vs:202405

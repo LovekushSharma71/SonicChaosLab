@@ -5,12 +5,12 @@
 - **id:** `switches_explained`
 - **difficulty:** intro
 - **requires:** none (lab deployed and at baseline; no prior lesson)
-- **target image:** docker-sonic-vs, branch **202405** (Containerlab topology: leaf1/leaf2 SONiC, h1/h2 Linux hosts)
-- **devices used in this lesson:** `leaf1`, `h1` (leaf2/h2 appear only as silent endpoints)
+- **target image:** docker-sonic-vs, branch **202405** (Containerlab topology: leaf1/leaf2 SONiC, h1–h4 Linux hosts)
+- **devices used in this lesson:** `leaf1`, `h1` (leaf2/h3 appear only as silent endpoints)
 - **lab prerequisites assumed by this lesson (bake into topology):**
   - h1 `eth1` = `10.0.1.10/24`, default gateway `10.0.1.1`, attached to leaf1 `Ethernet8`, access member of `Vlan10`
   - leaf1 `Vlan10` interface = `10.0.1.1/24`
-  - **pinned host MACs** (needed for deterministic chaos restore): h1 `eth1` = `02:00:00:00:01:10`, h2 `eth1` = `02:00:00:00:02:10`
+  - **pinned host MACs** (needed for deterministic chaos restore): h1 `eth1` = `02:00:00:00:01:10`, h3 `eth1` = `02:00:00:00:02:10`
   - all ports MTU 9100, admin up at baseline
 - **command execution targets:** `leaf1:` = docker exec into SONiC vs (root; `sudo` kept for fidelity with docs, harmless as root), `h1:` = docker exec into host container
 - **source URLs relied on:**
@@ -56,8 +56,8 @@
 | 19 | t_counters | teach | S7: Counters — the switch's diary | optional |
 | 20 | o_counters | observe | S7: Watch RX/TX move when h1 talks | optional |
 | 21 | q_counters | qna | S7: Questions — counters | optional |
-| 22 | t_boundary | teach | S8: The edge of the L2 world — why h1 never "switches" to h2 | optional |
-| 23 | o_boundary | observe | S8: Ping h2, then prove no h2 MAC was ever learned | optional |
+| 22 | t_boundary | teach | S8: The edge of the L2 world — why h1 never "switches" to h3 | optional |
+| 23 | o_boundary | observe | S8: Ping h3, then prove no h3 MAC was ever learned | optional |
 | 24 | q_boundary | qna | S8: Questions — the L2/L3 boundary | optional |
 | 25 | chaos | chaos_select | Pick one failure to inject (8 options) | core |
 | 26 | restore | restore | Heal the lab, verify baseline (re-ping, re-count) | core |
@@ -100,7 +100,7 @@ Admin down forces the operational state down. Admin up guarantees nothing — it
 
 **On SONiC.** `show vlan brief` prints one block per VLAN: its ID, the IP address configured on it (more on that in a moment), member ports, and each member's tagging mode. `show vlan config` shows the same membership as flat rows — easier to eyeball the Mode column. In this lab: leaf1 has Vlan10 with exactly one member, Ethernet8, untagged — that's h1's access port. And Vlan10 carries the address 10.0.1.1/24: the switch itself owns an IP *inside* the VLAN. Hold that thought — it is the secret door out of the L2 world, and scenario S8 walks through it.
 
-**Boundaries.** VLANs isolate; they never connect. Getting from Vlan10 to Vlan20 (h1 to h2) requires routing — Lesson 3's whole subject. Also: membership is configuration, not discovery; the switch will happily enforce a wrong VLAN assignment, which is exactly what one of the chaos options exploits.
+**Boundaries.** VLANs isolate; they never connect. Getting from Vlan10 to Vlan20 (h1 to h3) requires routing — Lesson 3's whole subject. Also: membership is configuration, not discovery; the switch will happily enforce a wrong VLAN assignment, which is exactly what one of the chaos options exploits.
 
 ### SECTION: t_mac — S4: The MAC table — learning by listening, flooding when ignorant
 
@@ -152,18 +152,18 @@ There is a third name to file away: **CONFIG_DB** (database 4) — your *intent*
 
 **Boundaries.** On this virtual switch, counter freshness is best-effort — trends are trustworthy, exact per-packet accounting is not. Queue, PFC, and watermark counters exist on real systems and are out of scope here.
 
-### SECTION: t_boundary — S8: The edge of the L2 world — why h1 never "switches" to h2
+### SECTION: t_boundary — S8: The edge of the L2 world — why h1 never "switches" to h3
 
-**Essence.** h1 (10.0.1.10, Vlan10 on leaf1) can reach h2 (10.0.2.10, Vlan20 on leaf2) — you will prove it with a ping — yet no switch ever "switches" a frame to h2. The frame's journey ends at the VLAN border, and something categorically different (routing) carries the payload onward. This scenario makes you *see* the border in the tables, and it is the doorway into Lesson 3.
+**Essence.** h1 (10.0.1.10, Vlan10 on leaf1) can reach h3 (10.0.2.10, Vlan20 on leaf2) — you will prove it with a ping — yet no switch ever "switches" a frame to h3. The frame's journey ends at the VLAN border, and something categorically different (routing) carries the payload onward. This scenario makes you *see* the border in the tables, and it is the doorway into Lesson 3.
 
 **Mechanism.** Two ideas, both small:
 
 - **ARP** (Address Resolution Protocol): IP-speaking hosts need a MAC to put on the frame. ARP is the shouted question — "who has IP X? tell me your MAC" — sent as a broadcast, answered by the owner. Every host keeps a little cache of answers.
 - **Default gateway:** before ARPing, a host compares the destination IP with its own subnet. Same subnet → ARP for the destination directly. *Different* subnet → don't even try; instead hand the packet to a designated local router, the default gateway, by ARPing for the *gateway's* IP and addressing the frame to the *gateway's* MAC.
 
-10.0.2.10 is outside h1's 10.0.1.0/24, so h1 wraps the packet for h2 inside a frame addressed to 10.0.1.1's MAC — leaf1's own Vlan10 interface. At Layer 2, h1 only ever converses with its gateway. h2's MAC never crosses into Vlan10, never gets learned, never appears.
+10.0.2.10 is outside h1's 10.0.1.0/24, so h1 wraps the packet for h3 inside a frame addressed to 10.0.1.1's MAC — leaf1's own Vlan10 interface. At Layer 2, h1 only ever converses with its gateway. h3's MAC never crosses into Vlan10, never gets learned, never appears.
 
-**On SONiC.** The observe step pings h2 from h1 (it succeeds — the two switches route it; how they know the way is Lesson 3's flagship topic), then collects the evidence: `show mac` on leaf1 — h1's MAC is there, h2's is nowhere; `show arp` on leaf1 — the switch resolved 10.0.1.10 on Vlan10 (the gateway keeps its own ARP cache, because routing made it a *sender* of frames toward h1); and h1's own neighbor cache (`ip neigh show`) — containing the gateway, not h2. Working ping + absent MAC = the packet was routed, not switched. That is the boundary.
+**On SONiC.** The observe step pings h3 from h1 (it succeeds — the two switches route it; how they know the way is Lesson 3's flagship topic), then collects the evidence: `show mac` on leaf1 — h1's MAC is there, h3's is nowhere; `show arp` on leaf1 — the switch resolved 10.0.1.10 on Vlan10 (the gateway keeps its own ARP cache, because routing made it a *sender* of frames toward h1); and h1's own neighbor cache (`ip neigh show`) — containing the gateway, not h3. Working ping + absent MAC = the packet was routed, not switched. That is the boundary.
 
 **Boundaries.** How leaf1 knows that 10.0.2.0/24 lives behind leaf2 — the routing table, BGP, reconvergence — is deliberately left dark until Lesson 3. Today you only need to know the L2 world has an edge, and you've now stood on it.
 
@@ -331,8 +331,8 @@ All options are restorable to baseline. "Injection-failed tell" = how the app (o
 - **restore:**
   - `leaf1: sudo config interface ip add Vlan10 10.0.1.1/24`
   - `h1: ping -c 3 10.0.1.1`
-- **expected effects (words):** Everything L2 stays healthy: port up, VLAN membership intact, LLDP fine, h1's MAC learned (its ARP broadcasts still flood and still teach). But nobody owns 10.0.1.1 anymore, so h1's ARP goes unanswered and both pings (to gateway and to h2) fail — h1→h2 dies because the escape door out of Vlan10 is gone. The subtle one: every L2 table looks perfect; only `show ip interfaces` betrays the missing address. Loss is immediate either way; only the error signature differs — with a warm ARP cache h1 keeps transmitting echo requests that nothing answers (silent timeouts), with a cold cache the failure surfaces one step earlier as unanswered ARP ("Destination Host Unreachable") `[VERIFY-ON-LAB: confirm both signatures]`.
-- **plan-B variant:** remove Vlan20's IP on leaf2 instead — breaks only the h2-side return path; h1's gateway pings keep working while end-to-end dies (splits the failure between L2-local health and end-to-end reachability).
+- **expected effects (words):** Everything L2 stays healthy: port up, VLAN membership intact, LLDP fine, h1's MAC learned (its ARP broadcasts still flood and still teach). But nobody owns 10.0.1.1 anymore, so h1's ARP goes unanswered and both pings (to gateway and to h3) fail — h1→h3 dies because the escape door out of Vlan10 is gone. The subtle one: every L2 table looks perfect; only `show ip interfaces` betrays the missing address. Loss is immediate either way; only the error signature differs — with a warm ARP cache h1 keeps transmitting echo requests that nothing answers (silent timeouts), with a cold cache the failure surfaces one step earlier as unanswered ARP ("Destination Host Unreachable") `[VERIFY-ON-LAB: confirm both signatures]`.
+- **plan-B variant:** remove Vlan20's IP on leaf2 instead — breaks only the h3-side return path; h1's gateway pings keep working while end-to-end dies (splits the failure between L2-local health and end-to-end reachability).
 - **injection-failed tell:** `show ip interfaces` on leaf1 still lists Vlan10 with 10.0.1.1/24 → removal didn't land.
 
 ---
@@ -372,7 +372,7 @@ All options are restorable to baseline. "Injection-failed tell" = how the app (o
   - `leaf1: sonic-clear fdb all`
   - `h1: ping -c 3 10.0.1.1`
 - **expected effects (words):** If the write is consumed: `show mac` gains a Static entry claiming h1 lives on Ethernet0 (the inter-switch link). Frames *to* h1 now exit the wrong port and vanish; h1's own frames still arrive but the static entry outranks learning, so the blackhole persists — the "wrong is worse than missing" lesson made real. Gateway→h1 direction dies while h1→switch traffic keeps flowing: asymmetric, silent, everything "up."
-- **plan-B variant:** poison from the traffic side instead — from h2's L2 domain this is not reachable in this topology, so the realistic alternative is a gratuitous-ARP style claim: give a scratch container on Vlan10 h1's IP with a different MAC and let it talk `[VERIFY-ON-LAB: requires an extra Vlan10 attachment; skip unless topology grows]`.
+- **plan-B variant:** poison from the traffic side instead — from h3's L2 domain this is not reachable in this topology, so the realistic alternative is a gratuitous-ARP style claim: give a scratch container on Vlan10 h1's IP with a different MAC and let it talk `[VERIFY-ON-LAB: requires an extra Vlan10 attachment; skip unless topology grows]`.
 - **injection-failed tell:** no Static-type row ever appears in `show mac` after inject → the raw CONFIG_DB write was ignored (expected risk on vs); the option self-reports as "injection not effective" rather than as a network failure.
 
 ---
@@ -392,17 +392,17 @@ Parsers available: `interface_status, mac_table, lldp_neighbors, vlan_membership
 | o_age | mac_table; **NEW-PARSER: mac_aging_time** (single line → integer seconds) | aging_seconds; count | aging value baseline-recorded `[VERIFY-ON-LAB: default aging value on vs]` |
 | o_redis | redis_keys | per query: db, pattern, key_count, sample_keys[] | expect ≥1 FDB key in ASIC_DB after ping; APPL_DB FDB_TABLE may be 0 `[VERIFY-ON-LAB]`; ≥2 LLDP_ENTRY_TABLE keys |
 | o_counters | **NEW-PARSER: interface_counters** (per port: rx_ok, tx_ok, rx_err, rx_drp, tx_err, tx_drp) | Ethernet8 rx_ok/tx_ok deltas; error/drop buckets | counters may lag one poll cycle on vs `[VERIFY-ON-LAB: poll interval / freshness]`; optional scenario — parser can ship later, raw display acceptable meanwhile |
-| o_boundary | ping_loss, mac_table; **NEW-PARSER: arp_table** (rows: ip, mac, iface) from `show arp`; h1 `ip neigh show` displayed raw | ping h1→h2 loss 0%; mac_table contains h1's MAC only (no 02:00:00:00:02:10); arp_table has 10.0.1.10 on Vlan10 | punchline is the *absence* of h2's MAC — diff logic must support asserting absence |
+| o_boundary | ping_loss, mac_table; **NEW-PARSER: arp_table** (rows: ip, mac, iface) from `show arp`; h1 `ip neigh show` displayed raw | ping h1→h3 loss 0%; mac_table contains h1's MAC only (no 02:00:00:00:02:10); arp_table has 10.0.1.10 on Vlan10 | punchline is the *absence* of h3's MAC — diff logic must support asserting absence |
 
 ### After-chaos fact map (same command set for all options; per-option focus + recovery)
 
 | chaos id | facts that should CHANGE | facts that should NOT change | measure_recovery |
 |---|---|---|---|
-| c_shut_access | Ethernet8 Admin+Oper→down; ping(gw) 100%; ping(h2) 100%; mac_table loses h1 entry `[VERIFY-ON-LAB: flush-on-down]`; ASIC_DB FDB keys shrink | vlan_membership; lldp (Ethernet0/4); Ethernet0/4 status | yes — time from `startup` to first successful ping |
+| c_shut_access | Ethernet8 Admin+Oper→down; ping(gw) 100%; ping(h3) 100%; mac_table loses h1 entry `[VERIFY-ON-LAB: flush-on-down]`; ASIC_DB FDB keys shrink | vlan_membership; lldp (Ethernet0/4); Ethernet0/4 status | yes — time from `startup` to first successful ping |
 | c_clear_fdb | mac count →0 momentarily | interface_status; vlan; lldp; ping ≈0% loss | yes — time to count ≥1 after restore ping |
-| c_vlan_member_del | vlan_membership loses Ethernet8; ping(gw+h2) 100%; mac entry gone | interface_status (all up!); lldp | yes |
+| c_vlan_member_del | vlan_membership loses Ethernet8; ping(gw+h3) 100%; mac entry gone | interface_status (all up!); lldp | yes |
 | c_wrong_vlan | vlan_membership: new vlan 50 w/ Ethernet8; mac entry present but vlan=50; ping 100% | interface_status; lldp | yes |
-| c_gw_ip_remove | vlan_membership ip field empty; ping(gw) →100% immediately; ping(h2) 100% | interface_status; mac_table (h1 entry persists via ARP retries); lldp | yes |
+| c_gw_ip_remove | vlan_membership ip field empty; ping(gw) →100% immediately; ping(h3) 100% | interface_status; mac_table (h1 entry persists via ARP retries); lldp | yes |
 | c_lldp_stop | lldp_neighbors on leaf1 →0 rows `[VERIFY-ON-LAB]`; feature state | ping 0% loss both probes; mac_table; vlan; interface_status | no (ageout too slow to time usefully) |
 | c_mac_flap | mac_table entry MAC value churn; transient ping loss | interface_status; vlan; lldp | no |
 | c_static_mac_wrong_port | mac_table gains Static row (mac→Ethernet0); ping(gw) drops (return path dead) | interface_status; vlan; lldp | yes |
@@ -465,7 +465,7 @@ Port/link state (admin vs operational), frames and MAC addresses, VLANs and acce
 - **c_clear_fdb:** count→0 instantly; ping loss ≈0 (at most the first probe) `[VERIFY-ON-LAB]`; relearn occurs on the first frame after flush — recovery time ≈ one ping interval. The correct "explanation" emphasizes the non-event: flooding absorbed the failure.
 - **c_vlan_member_del:** loss 100% starting within ~1 s; port status stays perfect — the diff's most interesting row is the *unchanged* interface_status next to the vanished membership; no relearn while injected. Recovery: membership re-add restores forwarding on the next ARP (~1 s).
 - **c_wrong_vlan:** loss 100%; MAC *is* learned but with vlan=50 — explanation must connect "entry exists" with "wrong broadcast domain, gateway unreachable"; recovery like option 3.
-- **c_gw_ip_remove:** L2 facts all healthy; gateway ping fails immediately — with a warm h1 ARP cache the echoes go out and die unanswered (timeouts), with a cold cache ARP itself fails ("Destination Host Unreachable") `[VERIFY-ON-LAB: confirm both signatures]`; h1→h2 fails identically (no escape from Vlan10). Recovery: re-adding the IP restores replies on the next ARP exchange (seconds).
+- **c_gw_ip_remove:** L2 facts all healthy; gateway ping fails immediately — with a warm h1 ARP cache the echoes go out and die unanswered (timeouts), with a cold cache ARP itself fails ("Destination Host Unreachable") `[VERIFY-ON-LAB: confirm both signatures]`; h1→h3 fails identically (no escape from Vlan10). Recovery: re-adding the IP restores replies on the next ARP exchange (seconds).
 - **c_lldp_stop:** zero data-plane change (both pings 0% loss throughout — say so explicitly); leaf1's neighbor table empties `[VERIFY-ON-LAB: on stop or on TTL]`; peer-side entries persist ~TTL (≈120 s). Recovery: entries return within ~30 s (announcement interval) of re-enable.
 - **c_mac_flap:** FDB entry for Ethernet8 changes identity across reads; ~1 lost ping per flap; old identities linger until aging `[VERIFY-ON-LAB: replace vs accumulate on vs]`. No recovery measurement — restore just pins the original MAC back.
 - **c_static_mac_wrong_port:** if consumed, a Static row appears pointing h1's MAC at Ethernet0; gateway→h1 replies exit the wrong port so ping shows 100% loss while *nothing else changes at all* — the purest "up but broken" in the lesson. If no Static row appears, report "injection ineffective on vs" (known limitation), not a network conclusion.
@@ -622,7 +622,7 @@ ethernet0, ethernet4, ethernet8, vlan10, h1, leaf1
 8. Can counters prove where a lost packet died, or only narrow it down?
 
 #### q_boundary
-1. ★ The ping to h2 worked — so why is h2's MAC absent from leaf1's table?
+1. ★ The ping to h3 worked — so why is h3's MAC absent from leaf1's table?
 2. ★ What exactly did h1 put in the destination-MAC field of those frames, and how did it know it?
 3. ★ Where does the switch's L2 job end and something else take over, physically and logically?
 4. Why does leaf1 have an ARP table at all — I thought ARP was a host thing?
@@ -650,7 +650,7 @@ Consolidated checklist of every `[VERIFY-ON-LAB]` marker in this lesson:
 13. **c_static_mac_wrong_port:** whether CONFIG_DB `FDB|Vlan10|<mac>` writes are consumed on vs at all; exact key format; if dead, keep option disabled permanently or re-target to APPL_DB producer path.
 14. **Counter freshness on vs:** poll interval, lag between ping burst and visible RX_OK/TX_OK movement; whether BPS/UTIL columns read N/A.
 15. **Typical container-to-container rtt** for healthy-state expectations.
-16. **Pinned host MACs present:** confirm topology actually sets h1=02:00:00:00:01:10, h2=02:00:00:00:02:10 (chaos restore depends on it).
+16. **Pinned host MACs present:** confirm topology actually sets h1=02:00:00:00:01:10, h3=02:00:00:00:02:10 (chaos restore depends on it).
 
 ## Machine Summary
 

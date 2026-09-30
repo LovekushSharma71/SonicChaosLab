@@ -1,0 +1,31 @@
+---
+h1:
+    username: 
+    password: 
+    platform: linux
+    hostname: 172.20.20.2
+h2:
+    username: 
+    password: 
+    platform: linux
+    hostname: 172.20.20.6
+h3:
+    username: 
+    password: 
+    platform: linux
+    hostname: 172.20.20.4
+h4:
+    username: 
+    password: 
+    platform: linux
+    hostname: 172.20.20.7
+leaf1:
+    username: 
+    password: 
+    platform: sonic-vs
+    hostname: 172.20.20.3
+leaf2:
+    username: 
+    password: 
+    platform: sonic-vs
+    hostname: 172.20.20.5

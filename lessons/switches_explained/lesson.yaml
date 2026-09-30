@@ -90,11 +90,11 @@ steps:
   optional: true
 - id: t_boundary
   kind: teach
-  title: 'S8: The edge of the L2 world — why h1 never "switches" to h2'
+  title: 'S8: The edge of the L2 world — why h1 never "switches" to h3'
   optional: true
 - id: o_boundary
   kind: observe
-  title: 'S8: Ping h2, then prove no h2 MAC was ever learned'
+  title: 'S8: Ping h3, then prove no h3 MAC was ever learned'
   optional: true
 - id: q_boundary
   kind: qna
@@ -249,10 +249,10 @@ chaos_options:
   - 'leaf1: sudo config interface ip add Vlan10 10.0.1.1/24'
   - 'h1: ping -c 3 10.0.1.1'
   expected_effects:
-  - 'Everything L2 stays healthy: port up, VLAN membership intact, LLDP fine, h1''s MAC learned (its ARP broadcasts still flood and still teach). But nobody owns 10.0.1.1 anymore, so h1''s ARP goes unanswered and both pings (to gateway and to h2) fail — h1→h2 dies because the escape door out of Vlan10 is gone. The subtle one: every L2 table looks perfect; only `show ip interfaces` betrays the missing address. Loss is immediate either way; only the error signature differs — with a warm ARP cache h1 keeps transmitting echo requests that nothing answers (silent timeouts), with a cold cache the failure surfaces one step earlier as unanswered ARP ("Destination Host Unreachable") `[VERIFY-ON-LAB: confirm both signatures]`.'
+  - 'Everything L2 stays healthy: port up, VLAN membership intact, LLDP fine, h1''s MAC learned (its ARP broadcasts still flood and still teach). But nobody owns 10.0.1.1 anymore, so h1''s ARP goes unanswered and both pings (to gateway and to h3) fail — h1→h3 dies because the escape door out of Vlan10 is gone. The subtle one: every L2 table looks perfect; only `show ip interfaces` betrays the missing address. Loss is immediate either way; only the error signature differs — with a warm ARP cache h1 keeps transmitting echo requests that nothing answers (silent timeouts), with a cold cache the failure surfaces one step earlier as unanswered ARP ("Destination Host Unreachable") `[VERIFY-ON-LAB: confirm both signatures]`.'
   risk: medium
   enabled: true
-  plan_b: remove Vlan20's IP on leaf2 instead — breaks only the h2-side return path; h1's gateway pings keep working while end-to-end dies (splits the failure between L2-local health and end-to-end reachability).
+  plan_b: remove Vlan20's IP on leaf2 instead — breaks only the h3-side return path; h1's gateway pings keep working while end-to-end dies (splits the failure between L2-local health and end-to-end reachability).
 - id: c_lldp_stop
   label: 'Silence the introductions: disable LLDP'
   type: service
@@ -292,7 +292,7 @@ chaos_options:
   - 'If the write is consumed: `show mac` gains a Static entry claiming h1 lives on Ethernet0 (the inter-switch link). Frames *to* h1 now exit the wrong port and vanish; h1''s own frames still arrive but the static entry outranks learning, so the blackhole persists — the "wrong is worse than missing" lesson made real. Gateway→h1 direction dies while h1→switch traffic keeps flowing: asymmetric, silent, everything "up."'
   risk: high
   enabled: false
-  plan_b: 'poison from the traffic side instead — from h2''s L2 domain this is not reachable in this topology, so the realistic alternative is a gratuitous-ARP style claim: give a scratch container on Vlan10 h1''s IP with a different MAC and let it talk `[VERIFY-ON-LAB: requires an extra Vlan10 attachment; skip unless topology grows]`.'
+  plan_b: 'poison from the traffic side instead — from h3''s L2 domain this is not reachable in this topology, so the realistic alternative is a gratuitous-ARP style claim: give a scratch container on Vlan10 h1''s IP with a different MAC and let it talk `[VERIFY-ON-LAB: requires an extra Vlan10 attachment; skip unless topology grows]`.'
 observe:
   facts:
   - interface_status
@@ -404,7 +404,7 @@ qna:
     - Which counters should move during our ping burst, and by roughly how much?
     - What does a rising RX_DRP with flat RX_ERR suggest, versus the reverse?
     q_boundary:
-    - The ping to h2 worked — so why is h2's MAC absent from leaf1's table?
+    - The ping to h3 worked — so why is h3's MAC absent from leaf1's table?
     - What exactly did h1 put in the destination-MAC field of those frames, and how did it know it?
     - Where does the switch's L2 job end and something else take over, physically and logically?
 meta:

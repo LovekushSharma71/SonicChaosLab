@@ -36,7 +36,7 @@ command_field_meanings:
     meaning: suppresses PMTUD's feedback message to create a blackhole (chaos 7).
 healthy_state_expectations: '- Every port on both leafs: MTU 9100, Oper up, Admin up.
 
-  - h1→h2: plain ping 0% loss; `ping -M do -s 1472` 0% loss; `ping -M do -s 8972` 0% loss (the jumbo fabric proven end to end).
+  - h1→h3: plain ping 0% loss; `ping -M do -s 1472` 0% loss; `ping -M do -s 8972` 0% loss (the jumbo fabric proven end to end).
 
   - Ethernet0 `mtu` = 9100 in CONFIG_DB, in APPL_DB PORT_TABLE, and in the status column — intent, application, reality agree.
 

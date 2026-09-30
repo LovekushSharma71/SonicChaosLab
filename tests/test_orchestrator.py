@@ -126,11 +126,12 @@ def test_experiment_command_path(repo_root):
     assert result.budget_spent
 
 
-def test_experiment_rejects_mutation(repo_root):
+def test_experiment_gates_disabled_allow_mutation(repo_root):
+    # Gates are code-disabled until the real-LLM milestone; the command runs but is marked unsafe.
     orch = _orch(repo_root)
     _goto(orch, "qna")
-    result = orch.experiment("leaf1: sudo config interface shutdown Ethernet0")
-    assert not result.executed and not result.safe
+    result = orch.experiment("leaf1: sudo config interface shutdown Ethernet0", explain=False)
+    assert result.executed and not result.safe
 
 
 def test_experiment_nl_proposes_then_confirms(repo_root):

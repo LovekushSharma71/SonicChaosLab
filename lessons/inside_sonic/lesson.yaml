@@ -195,7 +195,7 @@ chaos_options:
   - 'leaf1: sudo systemctl start swss'
   - 'h1: ping -c 3 10.0.2.10'
   expected_effects:
-  - 'orchagent and the managers vanish (`docker ps` loses swss; `show feature status` may still read enabled — intent vs reality again). The pipeline''s middle is gone, so *new* configuration no longer reaches hardware. Existing forwarding often keeps working for a while because syncd and the ASIC still hold their programmed state — a striking lesson that the control plane and the already-programmed data plane are separable `[VERIFY-ON-LAB: whether h1↔h2 keeps flowing with swss down, and for how long]`. Recovery on `start` replays state from CONFIG_DB/APPL_DB; expect a rebuild period before everything is green `[VERIFY-ON-LAB: recovery time; whether syncd needs co-restart]`.'
+  - 'orchagent and the managers vanish (`docker ps` loses swss; `show feature status` may still read enabled — intent vs reality again). The pipeline''s middle is gone, so *new* configuration no longer reaches hardware. Existing forwarding often keeps working for a while because syncd and the ASIC still hold their programmed state — a striking lesson that the control plane and the already-programmed data plane are separable `[VERIFY-ON-LAB: whether h1↔h3 keeps flowing with swss down, and for how long]`. Recovery on `start` replays state from CONFIG_DB/APPL_DB; expect a rebuild period before everything is green `[VERIFY-ON-LAB: recovery time; whether syncd needs co-restart]`.'
   risk: high
   enabled: true
   plan_b: '`leaf1: sudo config feature state swss disabled` / `enabled` (feature surface instead of systemd).'
@@ -208,7 +208,7 @@ chaos_options:
   - 'leaf1: sudo config vlan del -m 100-149'
   - 'h1: ping -c 3 10.0.2.10'
   expected_effects:
-  - 'Fifty new VLANs stampede down the staircase. `dbsize` jumps in CONFIG_DB, then APPL_DB, then ASIC_DB — and the *gap in time* between those jumps is the propagation lag made visible. Existing traffic (h1↔h2) should be unaffected; this is a control-plane load test, not a data-plane break. Measure how long until ASIC_DB fully catches up `[VERIFY-ON-LAB: per-stage lag on vs; whether any transient CPU spike]`.'
+  - 'Fifty new VLANs stampede down the staircase. `dbsize` jumps in CONFIG_DB, then APPL_DB, then ASIC_DB — and the *gap in time* between those jumps is the propagation lag made visible. Existing traffic (h1↔h3) should be unaffected; this is a control-plane load test, not a data-plane break. Measure how long until ASIC_DB fully catches up `[VERIFY-ON-LAB: per-stage lag on vs; whether any transient CPU spike]`.'
   risk: medium
   enabled: true
   plan_b: add the fifty VLANs one-by-one in a timed loop to draw a per-object lag curve instead of one bulk jump.
@@ -246,7 +246,7 @@ chaos_options:
   restore:
   - 'leaf1: sudo config feature state lldp enabled'
   expected_effects:
-  - 'A clean, safe demonstration of feature→container coupling. `show feature status` flips lldp to disabled and the lldp container leaves `docker ps` within seconds; APPL_DB''s LLDP_ENTRY_TABLE stops being refreshed and its rows age out. Zero data-plane impact — h1↔h2 keeps flowing at 0% loss. Recovery: re-enabling brings the container back and neighbors repopulate.'
+  - 'A clean, safe demonstration of feature→container coupling. `show feature status` flips lldp to disabled and the lldp container leaves `docker ps` within seconds; APPL_DB''s LLDP_ENTRY_TABLE stops being refreshed and its rows age out. Zero data-plane impact — h1↔h3 keeps flowing at 0% loss. Recovery: re-enabling brings the container back and neighbors repopulate.'
   risk: low
   enabled: true
   plan_b: '`leaf1: sudo systemctl stop lldp` / `start lldp`.'

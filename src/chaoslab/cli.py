@@ -29,12 +29,13 @@ app.add_typer(config_app, name="config")
 console = Console()
 
 KEY_BINDINGS = """\
-In-session navigation:
-  ↑/↓ + Enter   select in any menu (lessons, steps, chaos options, questions)
-  ← Back         every menu has a Back entry — one level up (step → lesson → catalogue)
-  Continue       advance to the next step
-  Quit           save session state and return to the shell (chaoslab select resumes)
-  Ctrl-C         same as Quit
+In-session navigation (three levels: catalogue → lesson menu → step):
+  ↑/↓ + Enter      select in any menu (lessons, steps, chaos options, questions)
+  ↑ Lesson menu    up one level from a step; Back in the lesson menu → catalogue
+  ← Previous step  one step back inside the lesson
+  Continue         advance to the next step
+  Quit             save session state and return to the shell (chaoslab lessons resumes)
+  Ctrl-C           same as Quit
 """
 
 TOPOLOGY_DIAGRAM = """\
@@ -107,7 +108,7 @@ def down() -> None:
 
 @app.command()
 def reset() -> None:
-    """Restore the lab baseline (clears active chaos)."""
+    """Restore the lab baseline: re-apply bound configs, startup ports, clear session state."""
     settings = _load()
     engine.clear_session_state()
     if settings.lab_mode == "mock":
@@ -116,12 +117,12 @@ def reset() -> None:
     from .lab.adapter import make_adapter
 
     adapter = make_adapter(settings)
-    for node in ("leaf1", "leaf2"):
-        result = adapter.run(f"{node}: sudo config interface startup Ethernet0,Ethernet4,Ethernet8")
-        console.print(f"  {node}: startup all lesson ports ({'ok' if result.ok else 'failed'})")
-    console.print(
-        "Baseline interfaces restored. Re-apply topo/configs/*.json for a full config reset."
-    )
+    console.print("Re-applying baselines (CONFIG_DB merge + FRR + port startup)...")
+    if topology.apply_baseline(adapter):
+        console.print("Lab baseline restored.")
+    else:
+        console.print("[red]Reset finished with errors — check with 'chaoslab status'.[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -129,13 +130,17 @@ def transcript() -> None:
     """Export the current/last session transcript."""
     files = sorted(settings_dir().glob("transcript-*.txt"))
     if not files:
-        console.print("No transcript found yet. Run a lesson with 'chaoslab select'.")
+        console.print("No transcript found yet. Run a lesson with 'chaoslab lessons'.")
         return
     console.print(files[-1].read_text())
 
 
 @app.command()
-def settings(action: str = "list", key: str = "", value: str = "") -> None:
+def settings(
+    action: str = typer.Argument("list"),
+    key: str = typer.Argument(""),
+    value: str = typer.Argument(""),
+) -> None:
     """App settings: list | get <key> | set <key> <value>. API keys are env-only."""
     if action == "list":
         console.print_json(load_settings().model_dump_json())
@@ -194,66 +199,133 @@ def config_set(
 @app.command()
 def run(
     cmd: str = typer.Option(..., "-cmd", "--cmd", help="command or NL instruction"),
-    lesson: str = typer.Option("", "-l", "--lesson"),
-    no_explain: bool = typer.Option(False, "--no-explain"),
 ) -> None:
-    """Experiment mode: run a read-only command on the live lab with a grounded explanation."""
+    """Free experiment mode: run a read-only command on the lab (safety allowlist only)."""
+    from .core.orchestrator import _PROPOSAL_MAP, _TARGET_PREFIX
+    from .lab.adapter import make_adapter, parse_spec
+
     settings = _load()
-    lesson_id = lesson or engine.load_last_lesson()
-    if not lesson_id:
-        console.print("No active lesson. Run 'chaoslab select' first (or pass --lesson).")
-        raise typer.Exit(1)
-    orch = engine.build_orchestrator(lesson_id, settings)
-    saved = engine.load_session_state(lesson_id)
-    if saved:  # experiments share the paused session's question budget (§5)
-        orch.step_index = saved["step_index"]
-        orch.questions_used = saved["questions_used"]
-        orch.redirects_used = saved["redirects_used"]
-    result = orch.experiment(cmd, explain=not no_explain)
-    if result.proposed_command and not result.executed:
-        console.print(f"Proposed: [cyan]{result.proposed_command}[/cyan]")
-        if questionary.confirm("Run it?").ask():
-            result = orch.experiment(result.proposed_command, explain=not no_explain)
-    if saved:
-        engine.save_session_state(orch)
-    if result.redirected:
-        console.print(Panel(result.output, title="off-topic"))
-        return
-    if not result.executed:
-        console.print(result.output)
-        return
-    console.print(Panel(result.output, title=result.command))
-    if result.explanation:
-        console.print(
-            Panel(
-                result.explanation,
-                title="explanation" + (" (lesson notes)" if result.fallback else ""),
-            )
+    text = cmd.strip()
+    if not _TARGET_PREFIX.match(text):
+        low = text.lower()
+        proposed = next(
+            (command for keyword, command in _PROPOSAL_MAP if keyword in low), None
         )
+        if proposed is None:
+            console.print(
+                'Use "<node>: <command>", e.g. chaoslab run -cmd "leaf1: show interfaces status".'
+            )
+            raise typer.Exit(1)
+        console.print(f"Proposed: [cyan]{proposed}[/cyan]")
+        if not questionary.confirm("Run it?").ask():
+            return
+        text = proposed
+    try:
+        parse_spec(text)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    # Safety allowlist is code-disabled until the real-LLM milestone (free experimentation).
+    result = make_adapter(settings).run(text)
+    console.print(Panel(result.raw or "(no output)", title=result.spec))
+
+
+# --------------------------------------------------------------------- interactive shell
+@app.command()
+def shell() -> None:
+    """Interactive shell: a SonicChaosLab> prompt that accepts every chaoslab command."""
+    import shlex
+
+    import click
+    from typer.main import get_command
+
+    root = get_command(app)
+    console.print(
+        "SONiC ChaosLab shell — type a command ('help' lists them, 'lessons' opens the "
+        "catalogue, 'exit' leaves). The 'chaoslab' prefix is optional."
+    )
+    while True:
+        try:
+            line = input("SonicChaosLab> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            break
+        if not line:
+            continue
+        try:
+            tokens = shlex.split(line)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            continue
+        if tokens and tokens[0] == "chaoslab":  # tolerate the full command form
+            tokens = tokens[1:]
+        if not tokens:
+            continue
+        if tokens[0] in ("exit", "quit"):
+            break
+        if tokens[0] == "shell":
+            console.print("Already in the shell.")
+            continue
+        try:
+            root.main(args=tokens, prog_name="chaoslab", standalone_mode=False)
+        except click.ClickException as exc:
+            exc.show()
+        except (click.exceptions.Exit, SystemExit):
+            pass
+        except KeyboardInterrupt:
+            console.print("[dim](interrupted)[/dim]")
+        except Exception as exc:  # the shell itself must never die (§4: CLI can never hang)
+            console.print(f"[red]{exc}[/red]")
 
 
 # --------------------------------------------------------------------- guided loop
 @app.command()
-def select(lesson_id: str = typer.Argument("")) -> None:
-    """Lesson catalogue → guided loop. With an id, jumps straight in."""
+def lessons() -> None:
+    """Lesson catalogue → guided loop (Back inside a lesson returns here)."""
+    _lessons_entry("")
+
+
+@app.command()
+def lesson(lesson_id: str = typer.Argument(...)) -> None:
+    """Jump straight into one lesson's guided loop by id."""
+    _lessons_entry(lesson_id)
+
+
+def _lessons_entry(lesson_id: str) -> None:
     settings = _load()
-    lessons = engine.catalogue()
-    if not lesson_id:
-        choice = questionary.select(
-            "Choose a lesson",
-            choices=[f"{lesson.id} — {lesson.title}" for lesson in lessons],
-        ).ask()
-        if not choice:
+    catalogue = engine.catalogue()
+    while True:
+        if not lesson_id:
+            choice = questionary.select(
+                "Choose a lesson — [id] title (difficulty); 'lesson <id>' jumps straight in",
+                choices=[
+                    questionary.Choice(
+                        title=f"[{item.id}]  {item.title}  ({item.lesson.difficulty})",
+                        value=item.id,
+                    )
+                    for item in catalogue
+                ]
+                + [questionary.Choice(title="Quit", value="__quit__")],
+            ).ask()
+            if choice is None or choice == "__quit__":
+                return
+            lesson_id = choice
+        try:
+            orch = engine.build_orchestrator(lesson_id, settings)
+        except KeyError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1) from exc
+        engine.save_last_lesson(lesson_id)
+        if _lesson_flow(orch) != "catalogue":
             return
-        lesson_id = choice.split(" — ", 1)[0]
-    try:
-        orch = engine.build_orchestrator(lesson_id, settings)
-    except KeyError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    engine.save_last_lesson(lesson_id)
-    saved = engine.load_session_state(lesson_id)
-    resumed = False
+        lesson_id = ""  # Back from the lesson menu → catalogue
+
+
+def _lesson_flow(orch: Orchestrator) -> str:
+    """Lesson menu ↔ step loop. Returns 'catalogue' (Back), 'quit', or 'finished'."""
+    transcript_lines: list[str] = []
+    action = "menu"
+    saved = engine.load_session_state(orch.lesson.id)
     if saved and 0 < saved["step_index"] < len(orch.lesson.steps):
         resume = questionary.confirm(
             f"Resume where you left off (step {saved['step_index'] + 1})?"
@@ -262,40 +334,58 @@ def select(lesson_id: str = typer.Argument("")) -> None:
             orch.step_index = saved["step_index"]
             orch.questions_used = saved["questions_used"]
             orch.redirects_used = saved["redirects_used"]
-            resumed = True
-    if not resumed:
-        _pick_start_step(orch)
-    _run_loop(orch)
+            action = _run_loop(orch, transcript_lines)
+    while action == "menu":
+        picked = _step_menu(orch)
+        if picked == "__back__":
+            action = "catalogue"
+            break
+        if picked is None or picked == "__quit__":
+            engine.save_session_state(orch)
+            console.print("Session paused. Resume with 'chaoslab lessons'.")
+            action = "quit"
+            break
+        orch.step_index = 0 if picked == -1 else picked
+        action = _run_loop(orch, transcript_lines)
+    _write_transcript(orch, transcript_lines)
+    return action
 
 
-def _pick_start_step(orch: Orchestrator) -> None:
-    """Sublesson navigation (§5): jump straight to a step / chaos scenario if desired."""
-    choices = [questionary.Choice(title="▶ Start from the beginning", value=-1)]
+def _step_menu(orch: Orchestrator) -> int | str | None:
+    """Sublesson menu (§5): pick a step / chaos scenario, go back to the catalogue, or quit."""
+    choices: list[questionary.Choice] = [
+        questionary.Choice(title="▶ Start from the beginning", value=-1)
+    ]
     for index, step in enumerate(orch.lesson.steps):
         marker = "○" if step.optional else "●"
         choices.append(
             questionary.Choice(title=f"{marker} {step.title} [{step.kind}]", value=index)
         )
-    picked = questionary.select("Start at", choices=choices).ask()
-    if picked is not None and picked >= 0:
-        orch.step_index = picked
+    choices.append(questionary.Choice(title="← Back (catalogue)", value="__back__"))
+    choices.append(questionary.Choice(title="Quit", value="__quit__"))
+    return questionary.select(f"{orch.lesson.title} — start at", choices=choices).ask()
 
 
 def _nav(orch: Orchestrator) -> str:
     choice = questionary.select(
-        "Next?", choices=["Continue", "← Back", "Quit"], default="Continue"
+        "Next?",
+        choices=["Continue", "← Previous step", "↑ Lesson menu", "Quit"],
+        default="Continue",
     ).ask()
     if choice is None or choice == "Quit":
         return "quit"
-    if choice == "← Back":
+    if choice == "← Previous step":
         orch.step_index = max(0, orch.step_index - 1)
         return "back"
+    if choice == "↑ Lesson menu":
+        return "menu"
     orch.advance()
     return "continue"
 
 
-def _run_loop(orch: Orchestrator) -> None:
-    transcript_lines: list[str] = []
+def _run_loop(orch: Orchestrator, transcript_lines: list[str] | None = None) -> str:
+    """Run steps until the lesson finishes or the user quits / returns to the lesson menu."""
+    transcript_lines = [] if transcript_lines is None else transcript_lines
     while not orch.finished:
         step = orch.current_step
         console.rule(f"[bold]{step.title}[/bold]" + ("  (optional)" if step.optional else ""))
@@ -316,12 +406,13 @@ def _run_loop(orch: Orchestrator) -> None:
             action = _nav(orch)
         if action == "quit":
             engine.save_session_state(orch)
-            console.print("Session paused. Resume with 'chaoslab select'.")
-            break
-    else:
-        engine.clear_session_state()
-        console.print(Panel("Lesson complete. Well done!", style="green"))
-    _write_transcript(orch, transcript_lines)
+            console.print("Session paused. Resume with 'chaoslab lessons'.")
+            return "quit"
+        if action == "menu":
+            return "menu"
+    engine.clear_session_state()
+    console.print(Panel("Lesson complete. Well done!", style="green"))
+    return "finished"
 
 
 def _render_observe(orch: Orchestrator, transcript_lines: list[str]) -> None:
@@ -340,13 +431,23 @@ def _render_observe(orch: Orchestrator, transcript_lines: list[str]) -> None:
 def _qna_loop(orch: Orchestrator, transcript_lines: list[str]) -> str:
     while True:
         suggestions = orch.suggested_questions()
-        choices = [*suggestions, "Ask your own", "Run an experiment", "Continue", "← Back", "Quit"]
+        choices = [
+            *suggestions,
+            "Ask your own",
+            "Run an experiment",
+            "Continue",
+            "← Previous step",
+            "↑ Lesson menu",
+            "Quit",
+        ]
         pick = questionary.select(f"Questions ({orch.questions_left} left)", choices=choices).ask()
         if pick is None or pick == "Quit":
             return "quit"
-        if pick == "← Back":
+        if pick == "← Previous step":
             orch.step_index = max(0, orch.step_index - 1)
             return "back"
+        if pick == "↑ Lesson menu":
+            return "menu"
         if pick == "Continue":
             orch.advance()
             return "continue"
@@ -413,13 +514,17 @@ def _chaos_step(orch: Orchestrator, transcript_lines: list[str]) -> str:
                 disabled="unverified" if not item.enabled else None,
             )
         )
-    choices.append(questionary.Choice(title="← Back", value="__back__"))
+    choices.append(questionary.Choice(title="← Previous step", value="__prev__"))
+    choices.append(questionary.Choice(title="↑ Lesson menu", value="__menu__"))
+    choices.append(questionary.Choice(title="Quit", value="__quit__"))
     pick = questionary.select("Break something (predict the impact first!)", choices=choices).ask()
-    if pick is None:
+    if pick is None or pick == "__quit__":
         return "quit"
-    if pick == "__back__":
+    if pick == "__prev__":
         orch.step_index = max(0, orch.step_index - 1)
         return "back"
+    if pick == "__menu__":
+        return "menu"
     prediction = questionary.text("Your prediction — what do you expect to change?").ask() or ""
     if prediction.strip():
         transcript_lines.append(f"Prediction for {pick}: {prediction.strip()}")
@@ -441,9 +546,7 @@ def _chaos_step(orch: Orchestrator, transcript_lines: list[str]) -> str:
 
 def _render_diff(changed: list[str]) -> None:
     if not changed:
-        console.print(
-            "[dim]No changed facts detected (mock has no override for this option).[/dim]"
-        )
+        console.print("[dim]No changed facts detected between the before/after snapshots.[/dim]")
         return
     table = Table(title="changed facts")
     table.add_column("before → after")
