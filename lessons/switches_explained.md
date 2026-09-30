@@ -60,7 +60,8 @@
 | 23 | o_boundary | observe | S8: Ping h3, then prove no h3 MAC was ever learned | optional |
 | 24 | q_boundary | qna | S8: Questions — the L2/L3 boundary | optional |
 | 25 | chaos | chaos_select | Pick one failure to inject (8 options) | core |
-| 26 | restore | restore | Heal the lab, verify baseline (re-ping, re-count) | core |
+| 26 | q_impact | qna | Questions — interrogate the failure you injected | core |
+| 27 | restore | restore | Heal the lab, verify baseline (re-ping, re-count) | core |
 
 ## Teach Sections
 
@@ -631,6 +632,11 @@ ethernet0, ethernet4, ethernet8, vlan10, h1, leaf1
 7. What is in h1's neighbor cache after the ping, and what state is the entry in?
 8. If both hosts were in Vlan10 on the same switch, how would this picture change?
 
+#### q_impact
+1. ★ What changed after the injection — which ports, MAC entries, or pings?
+2. ★ Why did reachability break or survive the way it did?
+3. ★ What would restore have to undo to heal this?
+
 ## Verify-On-Lab
 
 Consolidated checklist of every `[VERIFY-ON-LAB]` marker in this lesson:
@@ -683,6 +689,7 @@ Consolidated checklist of every `[VERIFY-ON-LAB]` marker in this lesson:
     {"id": "o_boundary", "kind": "observe", "core": false},
     {"id": "q_boundary", "kind": "qna", "core": false},
     {"id": "chaos", "kind": "chaos_select", "core": true},
+    {"id": "q_impact", "kind": "qna", "core": true},
     {"id": "restore", "kind": "restore", "core": true}
   ],
   "commands": {

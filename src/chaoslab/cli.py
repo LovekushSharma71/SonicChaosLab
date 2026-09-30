@@ -39,12 +39,17 @@ In-session navigation (three levels: catalogue → lesson menu → step):
 """
 
 TOPOLOGY_DIAGRAM = """\
-h1 ── leaf1 ══════ leaf2 ── h4
-        |            |
-        h2           h3
+            eBGP: AS 65001 ══ AS 65002 (2 parallel /31 uplinks, ECMP)
+            Ethernet0: 10.0.12.0/31 ── 10.0.12.1/31
+            Ethernet4: 10.0.12.2/31 ── 10.0.12.3/31
 
-leaf1: sonic-vs, AS 65001   (2 parallel /31 eBGP links)   leaf2: sonic-vs, AS 65002
-h1/h2/h3/h4: alpine hosts on access VLANs
+h1 ── Ethernet8  ┐                        ┌─ Ethernet8  ── h3
+                 leaf1 ══════════ leaf2
+h2 ── Ethernet12 ┘                        └─ Ethernet12 ── h4
+
+leaf1 Vlan10 gw 10.0.1.1/24: h1=10.0.1.10 h2=10.0.1.11
+leaf2 Vlan20 gw 10.0.2.1/24: h3=10.0.2.10 h4=10.0.2.11
+all ports MTU 9100 · host MACs 02:00:00:00:0L:1N
 """
 
 
@@ -90,8 +95,45 @@ def status() -> None:
 
 @app.command(name="topology")
 def topology_() -> None:
-    """Topology info: nodes, links, IPs/ASNs + diagram."""
+    """Topology details: diagram, per-node IPs/MACs, links — plus live state when the lab is up."""
+    settings = _load()
+    info = topology.describe()
     console.print(Panel(TOPOLOGY_DIAGRAM, title="topology"))
+
+    live = settings.lab_mode != "mock" and topology.preflight()[0]
+    ips = topology.mgmt_ips() if live else {}
+    states: dict[str, str] = {}
+    if ips:
+        from .lab.adapter import make_adapter
+
+        states = topology.link_states(make_adapter(settings))
+
+    nodes = Table(title="nodes")
+    for column in ("node", "kind", "data-plane addressing", "mac", "mgmt ip (live)"):
+        nodes.add_column(column)
+    for node in info["nodes"]:
+        if node["kind"] == "sonic-vs":
+            addressing = f"AS {node['asn']} · {node['svi']} · lo {node['loopback']}"
+            mac = "-"
+        else:
+            addressing = f"{node['ip']} on {node['vlan']} · gw {node['gw']}"
+            mac = node["mac"]
+        nodes.add_row(node["name"], node["kind"], addressing, mac, ips.get(node["name"], "-"))
+    console.print(nodes)
+
+    links = Table(title=f"links (MTU {info['mtu']} everywhere)")
+    for column in ("a", "b", "subnet", "role", "state (live)"):
+        links.add_column(column)
+    for link in info["links"]:
+        key = f"{link['a']} ~ {link['b']}"
+        links.add_row(
+            link["a"], link["b"], link.get("subnet", "-"), link["role"], states.get(key, "-")
+        )
+    console.print(links)
+
+    if not ips:
+        reason = "mock lab mode" if settings.lab_mode == "mock" else "lab not deployed"
+        console.print(f"[dim]Live columns unavailable ({reason}).[/dim]")
 
 
 @app.command()

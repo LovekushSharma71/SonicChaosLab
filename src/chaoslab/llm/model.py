@@ -9,6 +9,7 @@ the out-of-the-box experience never touch the network.
 
 from __future__ import annotations
 
+import json
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
@@ -104,6 +105,19 @@ class AnthropicClient(ModelClient):
         )
         return "".join(block.text for block in message.content if block.type == "text")
 
+    def stream(self, request: GenerationRequest) -> Iterator[str]:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=self.key, timeout=_TIMEOUT_S)
+        with client.messages.stream(
+            model=self.model,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            system=request.system,
+            messages=[{"role": "user", "content": f"{request.context}\n\n{request.task}"}],
+        ) as stream:
+            yield from stream.text_stream
+
 
 class _HttpClient(ModelClient):
     """Shared base for OpenAI-style/Ollama HTTP providers."""
@@ -161,6 +175,37 @@ class GroqClient(_HttpClient):
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
 
+    def stream(self, request: GenerationRequest) -> Iterator[str]:
+        """Live token stream over the OpenAI-style SSE endpoint (PRODUCT.md §8.6)."""
+        with httpx.stream(
+            "POST",
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {self.key}"},
+            json={
+                "model": self.model,
+                "temperature": request.temperature,
+                "stream": True,
+                "messages": [
+                    {"role": "system", "content": request.system},
+                    {"role": "user", "content": f"{request.context}\n\n{request.task}"},
+                ],
+            },
+            timeout=_TIMEOUT_S,
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                payload = line[len("data:") :].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    delta = json.loads(payload)["choices"][0]["delta"].get("content")
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+                if delta:
+                    yield delta
+
 
 class OllamaClient(_HttpClient):
     name = "ollama"
@@ -182,6 +227,30 @@ class OllamaClient(_HttpClient):
         )
         response.raise_for_status()
         return response.json()["response"]
+
+    def stream(self, request: GenerationRequest) -> Iterator[str]:
+        """Live token stream over Ollama's newline-delimited JSON responses."""
+        with httpx.stream(
+            "POST",
+            f"{self.host}/api/generate",
+            json={
+                "model": self.model,
+                "prompt": self._prompt(request),
+                "stream": True,
+                "options": {"temperature": request.temperature},
+            },
+            timeout=_TIMEOUT_S,
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    token = json.loads(line).get("response")
+                except json.JSONDecodeError:
+                    continue
+                if token:
+                    yield token
 
 
 def build_chain(settings: Settings) -> list[ModelClient]:

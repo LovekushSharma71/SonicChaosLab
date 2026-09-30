@@ -106,6 +106,10 @@ steps:
   kind: chaos_select
   title: Pick one failure to inject (8 options)
   optional: false
+- id: q_impact
+  kind: qna
+  title: Questions — interrogate the failure you injected
+  optional: false
 - id: restore
   kind: restore
   title: Heal the lab, verify baseline
@@ -385,6 +389,10 @@ qna:
     - What is supervisord doing inside each container?
     - Which processes live in swss, and which in bgp?
     - Why can one daemon crash without rebooting the whole switch?
+    q_impact:
+    - What broke, and which databases or containers changed after the injection?
+    - Why did the config intent stop reaching the applied state, or not?
+    - Which capability is gone now, and which processes explain it?
 meta:
   verified_on: UNVERIFIED — docker-sonic-vs:202405
   card_version: 1

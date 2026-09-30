@@ -6,7 +6,7 @@
       "prefix": "clab",
       "mgmt": {
         "network": "clab",
-        "bridge": "br-116785c24c87",
+        "bridge": "br-c4cfe99722f6",
         "ipv4-subnet": "172.20.20.0/24",
         "ipv4-gw": "172.20.20.1",
         "ipv6-subnet": "3fff:172:20:20::/64",
@@ -28,13 +28,13 @@
       "image": "alpine:latest",
       "mgmt-net": "",
       "mgmt-intf": "",
-      "mgmt-ipv4-address": "172.20.20.2",
+      "mgmt-ipv4-address": "172.20.20.3",
       "mgmt-ipv4-prefix-length": 24,
-      "mgmt-ipv6-address": "3fff:172:20:20::2",
+      "mgmt-ipv6-address": "3fff:172:20:20::3",
       "mgmt-ipv6-prefix-length": 64,
       "mac-address": "",
       "labels": {
-        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-mgmt-net-bridge": "br-c4cfe99722f6",
         "clab-node-group": "",
         "clab-node-kind": "linux",
         "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h1",
@@ -59,13 +59,13 @@
       "image": "alpine:latest",
       "mgmt-net": "",
       "mgmt-intf": "",
-      "mgmt-ipv4-address": "172.20.20.6",
+      "mgmt-ipv4-address": "172.20.20.7",
       "mgmt-ipv4-prefix-length": 24,
-      "mgmt-ipv6-address": "3fff:172:20:20::6",
+      "mgmt-ipv6-address": "3fff:172:20:20::7",
       "mgmt-ipv6-prefix-length": 64,
       "mac-address": "",
       "labels": {
-        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-mgmt-net-bridge": "br-c4cfe99722f6",
         "clab-node-group": "",
         "clab-node-kind": "linux",
         "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h2",
@@ -90,13 +90,13 @@
       "image": "alpine:latest",
       "mgmt-net": "",
       "mgmt-intf": "",
-      "mgmt-ipv4-address": "172.20.20.4",
+      "mgmt-ipv4-address": "172.20.20.2",
       "mgmt-ipv4-prefix-length": 24,
-      "mgmt-ipv6-address": "3fff:172:20:20::4",
+      "mgmt-ipv6-address": "3fff:172:20:20::2",
       "mgmt-ipv6-prefix-length": 64,
       "mac-address": "",
       "labels": {
-        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-mgmt-net-bridge": "br-c4cfe99722f6",
         "clab-node-group": "",
         "clab-node-kind": "linux",
         "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h3",
@@ -121,13 +121,13 @@
       "image": "alpine:latest",
       "mgmt-net": "",
       "mgmt-intf": "",
-      "mgmt-ipv4-address": "172.20.20.7",
+      "mgmt-ipv4-address": "172.20.20.6",
       "mgmt-ipv4-prefix-length": 24,
-      "mgmt-ipv6-address": "3fff:172:20:20::7",
+      "mgmt-ipv6-address": "3fff:172:20:20::6",
       "mgmt-ipv6-prefix-length": 64,
       "mac-address": "",
       "labels": {
-        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-mgmt-net-bridge": "br-c4cfe99722f6",
         "clab-node-group": "",
         "clab-node-kind": "linux",
         "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/h4",
@@ -152,13 +152,13 @@
       "image": "docker-sonic-vs:latest",
       "mgmt-net": "",
       "mgmt-intf": "",
-      "mgmt-ipv4-address": "172.20.20.3",
+      "mgmt-ipv4-address": "172.20.20.5",
       "mgmt-ipv4-prefix-length": 24,
-      "mgmt-ipv6-address": "3fff:172:20:20::3",
+      "mgmt-ipv6-address": "3fff:172:20:20::5",
       "mgmt-ipv6-prefix-length": 64,
       "mac-address": "",
       "labels": {
-        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-mgmt-net-bridge": "br-c4cfe99722f6",
         "clab-node-group": "",
         "clab-node-kind": "sonic-vs",
         "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/leaf1",
@@ -183,13 +183,13 @@
       "image": "docker-sonic-vs:latest",
       "mgmt-net": "",
       "mgmt-intf": "",
-      "mgmt-ipv4-address": "172.20.20.5",
+      "mgmt-ipv4-address": "172.20.20.4",
       "mgmt-ipv4-prefix-length": 24,
-      "mgmt-ipv6-address": "3fff:172:20:20::5",
+      "mgmt-ipv6-address": "3fff:172:20:20::4",
       "mgmt-ipv6-prefix-length": 64,
       "mac-address": "",
       "labels": {
-        "clab-mgmt-net-bridge": "br-116785c24c87",
+        "clab-mgmt-net-bridge": "br-c4cfe99722f6",
         "clab-node-group": "",
         "clab-node-kind": "sonic-vs",
         "clab-node-lab-dir": "/home/ec2-user/SonicChaosLab/topo/clab-chaoslab/leaf2",
@@ -210,13 +210,13 @@
         "a": {
           "node": "leaf1",
           "interface": "eth1",
-          "mac": "aa:c1:ab:a8:53:5d",
+          "mac": "aa:c1:ab:70:d1:10",
           "peer": "z"
         },
         "z": {
           "node": "leaf2",
           "interface": "eth1",
-          "mac": "aa:c1:ab:6e:e1:69",
+          "mac": "aa:c1:ab:7e:b1:f5",
           "peer": "a"
         }
       }
@@ -226,13 +226,13 @@
         "a": {
           "node": "leaf1",
           "interface": "eth2",
-          "mac": "aa:c1:ab:19:57:d1",
+          "mac": "aa:c1:ab:72:05:ae",
           "peer": "z"
         },
         "z": {
           "node": "leaf2",
           "interface": "eth2",
-          "mac": "aa:c1:ab:15:ff:9b",
+          "mac": "aa:c1:ab:9a:a6:5a",
           "peer": "a"
         }
       }
@@ -242,13 +242,13 @@
         "a": {
           "node": "leaf1",
           "interface": "eth3",
-          "mac": "aa:c1:ab:1b:ba:d5",
+          "mac": "aa:c1:ab:35:6a:89",
           "peer": "z"
         },
         "z": {
           "node": "h1",
           "interface": "eth1",
-          "mac": "aa:c1:ab:67:b4:ee",
+          "mac": "aa:c1:ab:45:36:a1",
           "peer": "a"
         }
       }
@@ -258,13 +258,13 @@
         "a": {
           "node": "leaf1",
           "interface": "eth4",
-          "mac": "aa:c1:ab:cc:75:84",
+          "mac": "aa:c1:ab:7f:d2:31",
           "peer": "z"
         },
         "z": {
           "node": "h2",
           "interface": "eth1",
-          "mac": "aa:c1:ab:51:90:77",
+          "mac": "aa:c1:ab:69:02:61",
           "peer": "a"
         }
       }
@@ -274,13 +274,13 @@
         "a": {
           "node": "leaf2",
           "interface": "eth3",
-          "mac": "aa:c1:ab:d3:b6:3f",
+          "mac": "aa:c1:ab:e1:f6:3a",
           "peer": "z"
         },
         "z": {
           "node": "h3",
           "interface": "eth1",
-          "mac": "aa:c1:ab:3e:8e:85",
+          "mac": "aa:c1:ab:f7:3d:e1",
           "peer": "a"
         }
       }
@@ -290,13 +290,13 @@
         "a": {
           "node": "leaf2",
           "interface": "eth4",
-          "mac": "aa:c1:ab:e3:f4:04",
+          "mac": "aa:c1:ab:bf:a0:0f",
           "peer": "z"
         },
         "z": {
           "node": "h4",
           "interface": "eth1",
-          "mac": "aa:c1:ab:9a:cf:9f",
+          "mac": "aa:c1:ab:f7:4d:8b",
           "peer": "a"
         }
       }

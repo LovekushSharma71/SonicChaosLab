@@ -64,7 +64,8 @@
 | 23 | o_dataplane | observe | S8: h1 reaches h3 while both links carry traffic | optional |
 | 24 | q_dataplane | qna | S8: Questions — control vs data plane | optional |
 | 25 | chaos | chaos_select | Pick one failure to inject (9 options) | core |
-| 26 | restore | restore | Heal the lab, verify reconvergence | core |
+| 26 | q_impact | qna | Questions — interrogate the failure you injected | core |
+| 27 | restore | restore | Heal the lab, verify reconvergence | core |
 
 ## Teach Sections
 
@@ -621,6 +622,11 @@ show bgp summary, clear ip bgp, 10.0.2.0/24, 10.0.12.1, ethernet0, leaf1, leaf2
 7. How would you prove, with three commands, that all planes are healthy?
 8. Which chaos options break control-only, and which break data?
 
+#### q_impact
+1. ★ What failed, and which facts changed after the injection?
+2. ★ Why did the route count and ping loss change the way they did?
+3. ★ What state is each BGP neighbor in now, and why?
+
 ## Verify-On-Lab
 
 1. **Timers:** confirm negotiated hold ≈10 s and keepalive ≈3 s in `show bgp neighbors`; confirm the lab's FRR config actually sets 3/10.
@@ -666,6 +672,7 @@ show bgp summary, clear ip bgp, 10.0.2.0/24, 10.0.12.1, ethernet0, leaf1, leaf2
     {"id": "o_dataplane", "kind": "observe", "core": false},
     {"id": "q_dataplane", "kind": "qna", "core": false},
     {"id": "chaos", "kind": "chaos_select", "core": true},
+    {"id": "q_impact", "kind": "qna", "core": true},
     {"id": "restore", "kind": "restore", "core": true}
   ],
   "commands": {

@@ -120,7 +120,7 @@ ui/                   # placeholder — see note below
 | `chaoslab settings [list\|get k\|set k v]` | App settings (provider, model, lab_mode, max_questions, demo_mode, …) |
 | `chaoslab config get <node>` | Dump the node's running config (CONFIG_DB view) |
 | `chaoslab config set <node> "<line>" ...` | Apply SONiC `config` set-family lines (allowlisted, atomic, confirmed) |
-| `chaoslab topology` | Topology info + diagram |
+| `chaoslab topology` | Diagram + per-node IPs/MACs/ASNs + links; live mgmt IPs & link state when the lab is up |
 | `chaoslab status` | One-shot health: provider reachable? lab deployed? nodes ready? |
 | `chaoslab reset` | Restore the lab baseline (re-apply bound configs + startup ports; clears session state) |
 | `chaoslab transcript` | Export the current/last session transcript |

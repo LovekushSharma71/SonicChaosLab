@@ -3,29 +3,29 @@ h1:
     username: 
     password: 
     platform: linux
-    hostname: 172.20.20.2
+    hostname: 172.20.20.3
 h2:
     username: 
     password: 
     platform: linux
-    hostname: 172.20.20.6
+    hostname: 172.20.20.7
 h3:
     username: 
     password: 
     platform: linux
-    hostname: 172.20.20.4
+    hostname: 172.20.20.2
 h4:
     username: 
     password: 
     platform: linux
-    hostname: 172.20.20.7
+    hostname: 172.20.20.6
 leaf1:
     username: 
     password: 
     platform: sonic-vs
-    hostname: 172.20.20.3
+    hostname: 172.20.20.5
 leaf2:
     username: 
     password: 
     platform: sonic-vs
-    hostname: 172.20.20.5
+    hostname: 172.20.20.4

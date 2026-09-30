@@ -57,7 +57,8 @@
 | 23 | o_procs | observe | S8: orchagent, syncd, bgpd as ordinary processes | optional |
 | 24 | q_procs | qna | S8: Questions — processes | optional |
 | 25 | chaos | chaos_select | Pick one failure to inject (8 options) | core |
-| 26 | restore | restore | Heal the lab, verify baseline | core |
+| 26 | q_impact | qna | Questions — interrogate the failure you injected | core |
+| 27 | restore | restore | Heal the lab, verify baseline | core |
 
 ## Teach Sections
 
@@ -605,6 +606,11 @@ config reload, vlan30, ethernet4, leaf1
 7. How would you check whether orchagent is actually running?
 8. What's the relationship between a "feature," a container, and its processes?
 
+#### q_impact
+1. ★ What broke, and which databases or containers changed after the injection?
+2. ★ Why did the config intent stop reaching the applied state, or not?
+3. ★ Which capability is gone now, and which processes explain it?
+
 ## Verify-On-Lab
 
 1. **swss stop, data-plane persistence:** with swss stopped, does h1↔h3 keep forwarding, and for how long? Recovery time on `start`; does syncd need co-restart?
@@ -651,6 +657,7 @@ config reload, vlan30, ethernet4, leaf1
     {"id": "o_procs", "kind": "observe", "core": false},
     {"id": "q_procs", "kind": "qna", "core": false},
     {"id": "chaos", "kind": "chaos_select", "core": true},
+    {"id": "q_impact", "kind": "qna", "core": true},
     {"id": "restore", "kind": "restore", "core": true}
   ],
   "commands": {

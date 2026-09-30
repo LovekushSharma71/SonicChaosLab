@@ -63,7 +63,7 @@ The grounded **explain → break → explain-the-impact** loop on a real network
 | `chaoslab settings [list\|get k\|set k v]` | App settings: API key/provider/model, max_questions, temperatures, lab host (local/SSH), demo_mode, etc. |
 | `chaoslab config get <node>` | Switch configuration: dump the node's running config (CONFIG_DB view) |
 | `chaoslab config set <node> ...` | Switch configuration: apply one or MORE SONiC `config ...` lines in one batch (see below); set-family commands only for now |
-| `chaoslab topology` | Topology info: nodes, links, per-link state, IPs/ASNs + ASCII/mermaid diagram |
+| `chaoslab topology` | Topology details: ASCII diagram + per-node table (data-plane IPs, ASNs, gateways, MACs) + links table (subnets, roles); when the lab is up, adds live mgmt IPs (docker) and per-link carrier state (kernel `LOWER_UP` — the vs Oper column is unreliable) |
 | `chaoslab status` | One-shot health: lab deployed? nodes ready? active session? model provider reachable? |
 | `chaoslab reset` | Restore lab baseline at any time (also clears active chaos) |
 | `chaoslab transcript` | Export current/last session transcript |

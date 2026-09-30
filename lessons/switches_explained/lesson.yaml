@@ -104,6 +104,10 @@ steps:
   kind: chaos_select
   title: Pick one failure to inject (8 options)
   optional: false
+- id: q_impact
+  kind: qna
+  title: Questions — interrogate the failure you injected
+  optional: false
 - id: restore
   kind: restore
   title: Heal the lab, verify baseline (re-ping, re-count)
@@ -407,6 +411,10 @@ qna:
     - The ping to h3 worked — so why is h3's MAC absent from leaf1's table?
     - What exactly did h1 put in the destination-MAC field of those frames, and how did it know it?
     - Where does the switch's L2 job end and something else take over, physically and logically?
+    q_impact:
+    - What changed after the injection — which ports, MAC entries, or pings?
+    - Why did reachability break or survive the way it did?
+    - What would restore have to undo to heal this?
 meta:
   verified_on: UNVERIFIED — docker-sonic-vs:202405
   card_version: 1

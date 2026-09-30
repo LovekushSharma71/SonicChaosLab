@@ -55,7 +55,8 @@
 | 20 | o_bgp_mtu | observe | S7: Session uptime and endpoints beside the MTU facts | optional |
 | 21 | q_bgp_mtu | qna | S7: Questions — MTU vs the control plane | optional |
 | 22 | chaos | chaos_select | Pick one failure to inject (7 options) | core |
-| 23 | restore | restore | Heal the lab, re-run the jumbo sweep to verify | core |
+| 23 | q_impact | qna | Questions — interrogate the failure you injected | core |
+| 24 | restore | restore | Heal the lab, re-run the jumbo sweep to verify | core |
 
 ## Teach Sections
 
@@ -550,6 +551,11 @@ ethernet8, leaf1, leaf2, h1, h3, 8972, 1472
 7. Which protocols are especially fragile to MTU faults, and why?
 8. If BGP flapped under an MTU fault, what would that tell you?
 
+#### q_impact
+1. ★ What changed after the injection — which ping sizes now fail?
+2. ★ Why does the interface stay up while large packets are dropped?
+3. ★ Why does BGP stay Established through this failure?
+
 ## Verify-On-Lab
 
 1. **Baseline jumbo path:** confirm `ping -M do -s 8972` h1→h3 succeeds at 9100 everywhere; capture typical rtt.
@@ -590,6 +596,7 @@ ethernet8, leaf1, leaf2, h1, h3, 8972, 1472
     {"id": "o_bgp_mtu", "kind": "observe", "core": false},
     {"id": "q_bgp_mtu", "kind": "qna", "core": false},
     {"id": "chaos", "kind": "chaos_select", "core": true},
+    {"id": "q_impact", "kind": "qna", "core": true},
     {"id": "restore", "kind": "restore", "core": true}
   ],
   "commands": {

@@ -62,12 +62,52 @@ def describe() -> dict:
     """Static topology description (nodes, links, IPs/ASNs) for the API and UI diagram (§7)."""
     return {
         "nodes": [
-            {"name": "leaf1", "kind": "sonic-vs", "asn": 65001},
-            {"name": "leaf2", "kind": "sonic-vs", "asn": 65002},
-            {"name": "h1", "kind": "linux", "ip": "10.0.1.10/24", "vlan": "Vlan10"},
-            {"name": "h2", "kind": "linux", "ip": "10.0.1.11/24", "vlan": "Vlan10"},
-            {"name": "h3", "kind": "linux", "ip": "10.0.2.10/24", "vlan": "Vlan20"},
-            {"name": "h4", "kind": "linux", "ip": "10.0.2.11/24", "vlan": "Vlan20"},
+            {
+                "name": "leaf1",
+                "kind": "sonic-vs",
+                "asn": 65001,
+                "svi": "Vlan10 10.0.1.1/24",
+                "loopback": "10.0.0.1/32",
+            },
+            {
+                "name": "leaf2",
+                "kind": "sonic-vs",
+                "asn": 65002,
+                "svi": "Vlan20 10.0.2.1/24",
+                "loopback": "10.0.0.2/32",
+            },
+            {
+                "name": "h1",
+                "kind": "linux",
+                "ip": "10.0.1.10/24",
+                "vlan": "Vlan10",
+                "gw": "10.0.1.1",
+                "mac": "02:00:00:00:01:10",
+            },
+            {
+                "name": "h2",
+                "kind": "linux",
+                "ip": "10.0.1.11/24",
+                "vlan": "Vlan10",
+                "gw": "10.0.1.1",
+                "mac": "02:00:00:00:01:11",
+            },
+            {
+                "name": "h3",
+                "kind": "linux",
+                "ip": "10.0.2.10/24",
+                "vlan": "Vlan20",
+                "gw": "10.0.2.1",
+                "mac": "02:00:00:00:02:10",
+            },
+            {
+                "name": "h4",
+                "kind": "linux",
+                "ip": "10.0.2.11/24",
+                "vlan": "Vlan20",
+                "gw": "10.0.2.1",
+                "mac": "02:00:00:00:02:11",
+            },
         ],
         "links": [
             {
@@ -89,6 +129,44 @@ def describe() -> dict:
         ],
         "mtu": 9100,
     }
+
+
+def mgmt_ips() -> dict[str, str]:
+    """Live management IPs from docker inspect; empty when docker/lab is absent."""
+    ips: dict[str, str] = {}
+    template = "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"
+    for node in [item["name"] for item in describe()["nodes"]]:
+        try:
+            proc = subprocess.run(
+                ["docker", "inspect", "-f", template, f"clab-{LAB_NAME}-{node}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return {}
+        if proc.returncode == 0 and proc.stdout.strip():
+            ips[node] = proc.stdout.strip()
+    return ips
+
+
+def link_states(adapter: DeviceAdapter) -> dict[str, str]:
+    """Per-link carrier state via kernel LOWER_UP on both endpoints.
+
+    The vs image's `show interfaces status` Oper column reads down even on forwarding
+    links, so the kernel carrier flag is the truthful source.
+    """
+    states: dict[str, str] = {}
+    for link in describe()["links"]:
+        up = True
+        for endpoint in (link["a"], link["b"]):
+            node, device = endpoint.split(":", 1)
+            result = adapter.run(f"{node}: ip link show {device}")
+            if not (result.ok and "LOWER_UP" in result.raw):
+                up = False
+        states[f"{link['a']} ~ {link['b']}"] = "up" if up else "down"
+    return states
 
 
 def preflight() -> tuple[bool, str]:

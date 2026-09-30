@@ -8,16 +8,16 @@ all:
     linux:
       hosts:
         clab-chaoslab-h1:
-          ansible_host: 172.20.20.2
+          ansible_host: 172.20.20.3
         clab-chaoslab-h2:
-          ansible_host: 172.20.20.6
-        clab-chaoslab-h3:
-          ansible_host: 172.20.20.4
-        clab-chaoslab-h4:
           ansible_host: 172.20.20.7
+        clab-chaoslab-h3:
+          ansible_host: 172.20.20.2
+        clab-chaoslab-h4:
+          ansible_host: 172.20.20.6
     sonic-vs:
       hosts:
         clab-chaoslab-leaf1:
-          ansible_host: 172.20.20.3
-        clab-chaoslab-leaf2:
           ansible_host: 172.20.20.5
+        clab-chaoslab-leaf2:
+          ansible_host: 172.20.20.4

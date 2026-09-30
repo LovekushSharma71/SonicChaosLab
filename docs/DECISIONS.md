@@ -108,6 +108,12 @@ authored lessons (or this build prompt) that should be folded back into the docs
 - The sudo shim swallows `sudo docker …` silently: SONiC's show CLI shells docker internally,
   the image has no nested docker, and the failure otherwise appends "exec: docker: not found"
   noise to every command's captured output.
+- `chaoslab topology` live link state reads the kernel carrier flag (`ip link` → `LOWER_UP`)
+  through the adapter — the vs image's `show interfaces status` Oper column reads down even on
+  forwarding links; mgmt IPs come from `docker inspect` (containerlab's clab network).
+- Verified on-lab: `show mac` and ASIC_DB FDB stay empty on docker-sonic-vs even with traffic;
+  real MAC learning lives in the kernel bridge — `bridge fdb show br Bridge` is the truth source
+  (switches_explained's observe steps must use it when lab-verifying lessons).
 - Fake provider now returns an explicit "(not implemented …)" placeholder for explanations and
   Q&A instead of mock grounded prose — honest about the missing LLM (user decision 2026-09-30).
 - Experiment gates (relevance + read-only safety) are code-disabled behind `_GATES_ENABLED` until

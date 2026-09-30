@@ -107,6 +107,10 @@ steps:
   kind: chaos_select
   title: Pick one failure to inject (9 options)
   optional: false
+- id: q_impact
+  kind: qna
+  title: Questions — interrogate the failure you injected
+  optional: false
 - id: restore
   kind: restore
   title: Heal the lab, verify reconvergence
@@ -392,6 +396,10 @@ qna:
     - What's the difference between the control plane and the data plane here?
     - Why might h1→h3 keep working after you stop the bgp container?
     - How can the session be Established while the ping fails?
+    q_impact:
+    - What failed, and which facts changed after the injection?
+    - Why did the route count and ping loss change the way they did?
+    - What state is each BGP neighbor in now, and why?
 meta:
   verified_on: UNVERIFIED — docker-sonic-vs:202405
   card_version: 1

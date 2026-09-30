@@ -8,7 +8,14 @@ import pytest
 from chaoslab.lessons.models import Card, Misconception
 from chaoslab.llm import model
 from chaoslab.llm.context import ChatMemory, assemble_context
-from chaoslab.llm.model import FakeModelClient, FallbackExhausted, GenerationRequest, safe_generate
+from chaoslab.llm.model import (
+    FakeModelClient,
+    FallbackExhausted,
+    GenerationRequest,
+    GroqClient,
+    OllamaClient,
+    safe_generate,
+)
 from chaoslab.settings import Settings
 
 
@@ -81,3 +88,48 @@ def test_safe_generate_exhausted(monkeypatch):
     request = GenerationRequest(system="s", context="[state]\n- fact\n", task="TASK: x")
     with pytest.raises(FallbackExhausted):
         safe_generate(request, Settings(provider="fake"))
+
+
+class _FakeStreamResponse:
+    """Minimal context-manager stand-in for httpx.stream responses."""
+
+    def __init__(self, lines: list[str]) -> None:
+        self._lines = lines
+
+    def __enter__(self) -> _FakeStreamResponse:
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        return False
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def iter_lines(self):
+        yield from self._lines
+
+
+def test_groq_client_streams_sse_deltas(monkeypatch):
+    lines = [
+        'data: {"choices":[{"delta":{"content":"Both "}}]}',
+        "",
+        'data: {"choices":[{"delta":{"content":"neighbors "}}]}',
+        'data: {"choices":[{"delta":{"content":"Established"}}]}',
+        "data: [DONE]",
+    ]
+    monkeypatch.setattr(model.httpx, "stream", lambda *a, **k: _FakeStreamResponse(lines))
+    request = GenerationRequest(system="s", context="[state]\n- fact\n", task="TASK: x")
+    tokens = list(GroqClient("llama-3.1-8b-instant", "key").stream(request))
+    assert "".join(tokens) == "Both neighbors Established"
+
+
+def test_ollama_client_streams_ndjson(monkeypatch):
+    lines = [
+        '{"response":"route "}',
+        '{"response":"count "}',
+        '{"response":"drops","done":true}',
+    ]
+    monkeypatch.setattr(model.httpx, "stream", lambda *a, **k: _FakeStreamResponse(lines))
+    request = GenerationRequest(system="s", context="[state]\n- fact\n", task="TASK: x")
+    tokens = list(OllamaClient("llama3", "http://localhost:11434").stream(request))
+    assert "".join(tokens) == "route count drops"
