@@ -102,6 +102,10 @@ steps:
   kind: qna
   title: 'S8: Questions — processes'
   optional: true
+- id: q_baseline
+  kind: qna
+  title: Questions — interrogate the healthy baseline
+  optional: false
 - id: chaos
   kind: chaos_select
   title: Pick one failure to inject (8 options)
@@ -116,10 +120,10 @@ steps:
   optional: false
 commands:
   baseline:
-  - 'leaf1: docker ps'
+  - 'leaf1: supervisorctl status'
   - 'leaf1: show feature status'
   after_chaos:
-  - 'leaf1: docker ps'
+  - 'leaf1: supervisorctl status'
   - 'leaf1: show feature status'
   - 'leaf1: show interfaces status'
   - 'leaf1: show vlan brief'
@@ -130,7 +134,7 @@ commands:
   - 'h1: ping -c 5 10.0.2.10'
   per_step:
     o_containers:
-    - 'leaf1: docker ps'
+    - 'leaf1: supervisorctl status'
     - 'leaf1: show feature status'
     o_configdb:
     - 'leaf1: sonic-db-cli CONFIG_DB keys "PORT|*"'
@@ -165,8 +169,8 @@ commands:
     - 'leaf1: sonic-db-cli STATE_DB hget "PORT_TABLE|Ethernet4" oper_status'
     - 'leaf1: sudo config interface startup Ethernet4'
     o_procs:
-    - 'leaf1: docker exec swss supervisorctl status'
-    - 'leaf1: docker exec bgp supervisorctl status'
+    - 'leaf1: supervisorctl status orchagent portmgrd vlanmgrd neighsyncd'
+    - 'leaf1: supervisorctl status bgpd zebra fpmsyncd staticd'
   vocabulary:
   - show feature status*
   - show feature config*
@@ -183,8 +187,8 @@ commands:
   - sonic-db-cli STATE_DB *
   - sonic-db-cli COUNTERS_DB *
   - redis-cli *
-  - docker ps*
-  - docker exec * supervisorctl status*
+  - supervisorctl status*
+  - supervisorctl *
   - config vlan*
   - config interface shutdown*
   - config interface startup*
@@ -194,9 +198,9 @@ chaos_options:
   label: 'Decapitate the pipeline: stop the swss container'
   type: service
   inject:
-  - 'leaf1: sudo systemctl stop swss'
+  - 'leaf1: supervisorctl stop orchagent'
   restore:
-  - 'leaf1: sudo systemctl start swss'
+  - 'leaf1: supervisorctl start orchagent'
   - 'h1: ping -c 3 10.0.2.10'
   expected_effects:
   - 'orchagent and the managers vanish (`docker ps` loses swss; `show feature status` may still read enabled — intent vs reality again). The pipeline''s middle is gone, so *new* configuration no longer reaches hardware. Existing forwarding often keeps working for a while because syncd and the ASIC still hold their programmed state — a striking lesson that the control plane and the already-programmed data plane are separable `[VERIFY-ON-LAB: whether h1↔h3 keeps flowing with swss down, and for how long]`. Recovery on `start` replays state from CONFIG_DB/APPL_DB; expect a rebuild period before everything is green `[VERIFY-ON-LAB: recovery time; whether syncd needs co-restart]`.'
@@ -389,6 +393,10 @@ qna:
     - What is supervisord doing inside each container?
     - Which processes live in swss, and which in bgp?
     - Why can one daemon crash without rebooting the whole switch?
+    q_baseline:
+    - What are the main SONiC containers and what does each one do?
+    - What's the difference between a feature being "enabled" and its container being "running"?
+    - Which containers form the spine of the forwarding pipeline, and why those?
     q_impact:
     - What broke, and which databases or containers changed after the injection?
     - Why did the config intent stop reaching the applied state, or not?

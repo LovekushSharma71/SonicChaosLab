@@ -82,6 +82,26 @@ def test_parse_mac_table(adapter):
     assert entries[0].port == "Ethernet8"
 
 
+def test_parse_bridge_fdb(adapter):
+    raw = adapter.run("leaf1: bridge fdb show br Bridge").raw
+    entries, count = metrics.parse_bridge_fdb(raw)
+    assert count == 2  # permanent rows excluded
+    assert any(e.mac == "02:00:00:00:01:10" and e.port == "Ethernet8" for e in entries)
+    assert all(e.vlan == "10" for e in entries)
+
+
+def test_parse_supervisorctl():
+    raw = (
+        "orchagent    STOPPED   Sep 30 10:00 AM\n"
+        "portmgrd     RUNNING   pid 31, uptime 0:20:00\n"
+        "start.sh     EXITED    Sep 30 09:31 AM\n"
+    )
+    procs = metrics.parse_supervisorctl(raw)
+    assert procs["orchagent"] == "STOPPED"
+    assert procs["portmgrd"] == "RUNNING"
+    assert procs["start.sh"] == "EXITED"
+
+
 def test_snapshot_diff_detects_chaos(adapter):
     before = metrics.collect_snapshot(adapter.run_many(BGP_AFTER))
     adapter.on_inject("c_shut_one_link")

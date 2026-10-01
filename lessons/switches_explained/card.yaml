@@ -34,9 +34,11 @@ command_field_meanings:
   show vlan config:
     meaning: 'same membership as flat rows: Name (VlanNN), VID (number), Member (port), Mode (untagged/tagged).'
   show mac:
-    meaning: 'the FDB. No.: row index. Vlan: VLAN the entry lives in. MacAddress: the learned/pinned MAC. Port: exit port for frames *to* that MAC. Type: Dynamic (learned, ages out) or Static (operator-pinned, never ages). Footer: total count. `show mac -c`: count only.'
+    meaning: 'the FDB. No.: row index. Vlan: VLAN the entry lives in. MacAddress: the learned/pinned MAC. Port: exit port for frames *to* that MAC. Type: Dynamic (learned, ages out) or Static (operator-pinned, never ages). Footer: total count. `show mac -c`: count only. On docker-sonic-vs this view reads empty (learn events never reach ASIC_DB) — a live illustration that the CLI shows a database, not the wire.'
+  bridge fdb show br Bridge:
+    meaning: 'the kernel bridge''s forwarding database: `<mac> dev <port> vlan <vid> master Bridge` per learned row (`permanent` rows are the switch''s own addresses). On the virtual switch this is the ground truth the lesson''s facts are read from.'
   show mac aging-time:
-    meaning: single line stating the aging period in seconds for dynamic entries.
+    meaning: 'single line stating the aging period in seconds for dynamic entries. Kernel equivalent: `ip -d link show Bridge` → `ageing_time` (centiseconds; 30000 = 300 s).'
   show arp:
     meaning: 'the switch''s own IP→MAC resolutions (it needs them because its VLAN interface makes it a traffic *sender*). Address: neighbor IP. MacAddress: resolved MAC. Iface: port/VLAN the neighbor was seen on. Vlan: VLAN ID when applicable.'
   show ip interfaces:
@@ -53,13 +55,13 @@ healthy_state_expectations: '- Ethernet0, Ethernet4, Ethernet8 on leaf1: Oper up
 
   - `show vlan brief`: exactly VLAN 10, IP 10.0.1.1/24, member Ethernet8, untagged.
 
-  - `show lldp table`: leaf2 visible twice (via Ethernet0 and Ethernet4) with its port IDs; typically no entry for Ethernet8 (h1 doesn''t speak LLDP); entry count ≥2.
+  - `show lldp table`: empty on this image (no lldpd shipped — the CLI errors on an empty card file). On hardware: leaf2 visible twice (via Ethernet0 and Ethernet4); typically no entry for Ethernet8 (h1 doesn''t speak LLDP).
 
-  - `show mac` after any h1 ping: at least one Dynamic entry — 02:00:00:00:01:10, Vlan 10, Ethernet8. Before any traffic (or after aging), the table may legitimately be empty.
+  - `bridge fdb show br Bridge` after any h1 ping: at least one learned entry — 02:00:00:00:01:10 on Ethernet8, vlan 10 (`show mac` stays empty on vs — expected).
 
-  - `show mac aging-time`: a positive number of seconds `[VERIFY-ON-LAB: capture the default and pin it in this card]`.
+  - `show mac aging-time`: "not configured" on vs; the kernel ageing_time is 30000 cs (300 s) via `ip -d link show Bridge`.
 
-  - Redis: ASIC_DB has ≥1 SAI_OBJECT_TYPE_FDB_ENTRY key after a ping; APPL_DB has ≥2 LLDP_ENTRY_TABLE keys; APPL_DB FDB_TABLE expected empty on vs `[VERIFY-ON-LAB]`.
+  - Redis: ASIC_DB SAI_OBJECT_TYPE_FDB_ENTRY keys: **0 on vs even after a ping** (verified — learn events never reach the pipeline; the kernel bridge holds the real table); APPL_DB FDB_TABLE likewise empty; LLDP_ENTRY_TABLE keys 0 (no LLDP stack on this image).
 
   - h1→10.0.1.1 and h1→10.0.2.10: 0% loss, sub-10 ms rtt typical for containers `[VERIFY-ON-LAB: typical rtt]`.
 

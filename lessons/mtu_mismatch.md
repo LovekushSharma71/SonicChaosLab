@@ -54,9 +54,10 @@
 | 19 | t_bgp_mtu | teach | S7: Why BGP survives what your data doesn't (MSS) | optional |
 | 20 | o_bgp_mtu | observe | S7: Session uptime and endpoints beside the MTU facts | optional |
 | 21 | q_bgp_mtu | qna | S7: Questions — MTU vs the control plane | optional |
-| 22 | chaos | chaos_select | Pick one failure to inject (7 options) | core |
-| 23 | q_impact | qna | Questions — interrogate the failure you injected | core |
-| 24 | restore | restore | Heal the lab, re-run the jumbo sweep to verify | core |
+| 22 | q_baseline | qna | Questions — interrogate the healthy baseline | core |
+| 23 | chaos | chaos_select | Pick one failure to inject (7 options) | core |
+| 24 | q_impact | qna | Questions — interrogate the failure you injected | core |
+| 25 | restore | restore | Heal the lab, re-run the jumbo sweep to verify | core |
 
 ## Teach Sections
 
@@ -185,7 +186,7 @@ Convention: `<target>: <command>`. DF ping = `ping -M do -s <payload>`.
 - `leaf2: show interfaces status`
 
 #### o_bgp_mtu
-- `leaf1: show bgp summary`
+- `leaf1: vtysh -c "show bgp summary"`
 - `leaf1: show interfaces status`
 - `h1: ping -M do -s 8972 -c 3 10.0.2.10`
 
@@ -196,7 +197,7 @@ Run after any injection (the engine diffs these against baseline facts):
 - `leaf1: show interfaces status`
 - `leaf2: show interfaces status`
 - `leaf1: show ip route 10.0.2.0/24`
-- `leaf1: show bgp summary`
+- `leaf1: vtysh -c "show bgp summary"`
 - `h1: ping -c 5 10.0.2.10`
 - `h1: ping -M do -s 1472 -c 5 10.0.2.10`
 - `h1: ping -M do -s 8972 -c 5 10.0.2.10`
@@ -209,7 +210,7 @@ show interfaces status*
 show interfaces counters*
 show ip interfaces*
 show ip route*
-show bgp summary*
+vtysh -c "show bgp summary*
 config interface mtu*
 sonic-db-cli CONFIG_DB *
 sonic-db-cli APPL_DB *
@@ -551,6 +552,11 @@ ethernet8, leaf1, leaf2, h1, h3, 8972, 1472
 7. Which protocols are especially fragile to MTU faults, and why?
 8. If BGP flapped under an MTU fault, what would that tell you?
 
+#### q_baseline
+1. ★ What is MTU, and why is it 9100 here instead of 1500?
+2. ★ Why is a path only as wide as its narrowest link?
+3. ★ What are the two things that can happen to a too-big packet?
+
 #### q_impact
 1. ★ What changed after the injection — which ping sizes now fail?
 2. ★ Why does the interface stay up while large packets are dropped?
@@ -595,6 +601,7 @@ ethernet8, leaf1, leaf2, h1, h3, 8972, 1472
     {"id": "t_bgp_mtu", "kind": "teach", "core": false},
     {"id": "o_bgp_mtu", "kind": "observe", "core": false},
     {"id": "q_bgp_mtu", "kind": "qna", "core": false},
+    {"id": "q_baseline", "kind": "qna", "core": true},
     {"id": "chaos", "kind": "chaos_select", "core": true},
     {"id": "q_impact", "kind": "qna", "core": true},
     {"id": "restore", "kind": "restore", "core": true}
@@ -606,8 +613,8 @@ ethernet8, leaf1, leaf2, h1, h3, 8972, 1472
     "o_frag": ["h1: ping -M do -s 8972 -c 3 10.0.2.10", "h1: ping -s 8972 -c 3 10.0.2.10"],
     "o_ecmp_mtu": ["leaf1: show interfaces status", "leaf1: show ip route 10.0.2.0/24", "h1: ping -M do -s 8972 -c 3 10.0.2.10"],
     "o_detect": ["h1: ping -c 3 10.0.2.10", "h1: ping -M do -s 1472 -c 3 10.0.2.10", "h1: ping -M do -s 8972 -c 3 10.0.2.10", "leaf1: show interfaces status", "leaf2: show interfaces status"],
-    "o_bgp_mtu": ["leaf1: show bgp summary", "leaf1: show interfaces status", "h1: ping -M do -s 8972 -c 3 10.0.2.10"],
-    "after_chaos": ["leaf1: show interfaces status", "leaf2: show interfaces status", "leaf1: show ip route 10.0.2.0/24", "leaf1: show bgp summary", "h1: ping -c 5 10.0.2.10", "h1: ping -M do -s 1472 -c 5 10.0.2.10", "h1: ping -M do -s 8972 -c 5 10.0.2.10", "h1: ping -s 8972 -c 5 10.0.2.10"]
+    "o_bgp_mtu": ["leaf1: vtysh -c \"show bgp summary\"", "leaf1: show interfaces status", "h1: ping -M do -s 8972 -c 3 10.0.2.10"],
+    "after_chaos": ["leaf1: show interfaces status", "leaf2: show interfaces status", "leaf1: show ip route 10.0.2.0/24", "leaf1: vtysh -c \"show bgp summary\"", "h1: ping -c 5 10.0.2.10", "h1: ping -M do -s 1472 -c 5 10.0.2.10", "h1: ping -M do -s 8972 -c 5 10.0.2.10", "h1: ping -s 8972 -c 5 10.0.2.10"]
   },
   "chaos_ids": ["c_mtu1500_one_side", "c_mtu1500_one_link", "c_mtu1500_all_links", "c_host_mtu", "c_access_port_mtu", "c_tiny_mtu", "c_pmtud_blackhole"],
   "enabled_chaos": ["c_mtu1500_one_side", "c_mtu1500_one_link", "c_mtu1500_all_links", "c_host_mtu"],

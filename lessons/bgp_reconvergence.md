@@ -63,9 +63,10 @@
 | 22 | t_dataplane | teach | S8: Control plane decides, data plane carries | optional |
 | 23 | o_dataplane | observe | S8: h1 reaches h3 while both links carry traffic | optional |
 | 24 | q_dataplane | qna | S8: Questions — control vs data plane | optional |
-| 25 | chaos | chaos_select | Pick one failure to inject (9 options) | core |
-| 26 | q_impact | qna | Questions — interrogate the failure you injected | core |
-| 27 | restore | restore | Heal the lab, verify reconvergence | core |
+| 25 | q_baseline | qna | Questions — interrogate the healthy baseline | core |
+| 26 | chaos | chaos_select | Pick one failure to inject (9 options) | core |
+| 27 | q_impact | qna | Questions — interrogate the failure you injected | core |
+| 28 | restore | restore | Heal the lab, verify reconvergence | core |
 
 ## Teach Sections
 
@@ -180,13 +181,13 @@ Convention: `<target>: <command>`. `vtysh -c "…"` runs FRR commands in the bgp
 ### Per-scenario observe commands
 
 #### o_peering
-- `leaf1: show bgp summary`
+- `leaf1: vtysh -c "show bgp summary"`
 - `leaf1: show ip interfaces`
 
 #### o_advertise
-- `leaf1: show bgp neighbors 10.0.12.1 advertised-routes`
-- `leaf1: show bgp neighbors 10.0.12.1 received-routes`
-- `leaf1: show bgp neighbors 10.0.12.3 received-routes`
+- `leaf1: vtysh -c "show bgp neighbors 10.0.12.1 advertised-routes"`
+- `leaf1: vtysh -c "show bgp neighbors 10.0.12.1 received-routes"`
+- `leaf1: vtysh -c "show bgp neighbors 10.0.12.3 received-routes"`
 
 #### o_routes
 - `leaf1: show ip route`
@@ -202,31 +203,31 @@ Convention: `<target>: <command>`. `vtysh -c "…"` runs FRR commands in the bgp
 - `leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_NEXT_HOP_GROUP*"`
 
 #### o_timers
-- `leaf1: show bgp neighbors 10.0.12.1`
+- `leaf1: vtysh -c "show bgp neighbors 10.0.12.1"`
 
 #### o_messages
-- `leaf1: show bgp neighbors 10.0.12.1`
+- `leaf1: vtysh -c "show bgp neighbors 10.0.12.1"`
 
 #### o_dataplane
 - `h1: ping -c 5 10.0.2.10`
-- `leaf1: show bgp summary`
+- `leaf1: vtysh -c "show bgp summary"`
 - `leaf1: show ip route 10.0.2.0/24`
 
 ### After-chaos commands
 
 Run after any injection (the engine diffs these against baseline facts):
 
-- `leaf1: show bgp summary`
+- `leaf1: vtysh -c "show bgp summary"`
 - `leaf1: show ip route 10.0.2.0/24`
 - `leaf1: show interfaces status`
 - `leaf1: sonic-db-cli APPL_DB keys "ROUTE_TABLE:10.0.2.0/24"`
 - `h1: ping -c 10 10.0.2.10`
-- `leaf2: show bgp summary`
+- `leaf2: vtysh -c "show bgp summary"`
 
 ### Vocabulary
 
 ```
-show bgp*
+vtysh -c "show bgp*
 show ip bgp*
 show ip route*
 show ip interfaces*
@@ -622,6 +623,11 @@ show bgp summary, clear ip bgp, 10.0.2.0/24, 10.0.12.1, ethernet0, leaf1, leaf2
 7. How would you prove, with three commands, that all planes are healthy?
 8. Which chaos options break control-only, and which break data?
 
+#### q_baseline
+1. ★ What does "Established" mean in `show bgp summary`, and how do I tell at a glance?
+2. ★ Why do leaf1 and leaf2 have different AS numbers, and what makes this eBGP?
+3. ★ What are the two neighbors leaf1 has, and why two?
+
 #### q_impact
 1. ★ What failed, and which facts changed after the injection?
 2. ★ Why did the route count and ping loss change the way they did?
@@ -671,20 +677,21 @@ show bgp summary, clear ip bgp, 10.0.2.0/24, 10.0.12.1, ethernet0, leaf1, leaf2
     {"id": "t_dataplane", "kind": "teach", "core": false},
     {"id": "o_dataplane", "kind": "observe", "core": false},
     {"id": "q_dataplane", "kind": "qna", "core": false},
+    {"id": "q_baseline", "kind": "qna", "core": true},
     {"id": "chaos", "kind": "chaos_select", "core": true},
     {"id": "q_impact", "kind": "qna", "core": true},
     {"id": "restore", "kind": "restore", "core": true}
   ],
   "commands": {
-    "o_peering": ["leaf1: show bgp summary", "leaf1: show ip interfaces"],
-    "o_advertise": ["leaf1: show bgp neighbors 10.0.12.1 advertised-routes", "leaf1: show bgp neighbors 10.0.12.1 received-routes", "leaf1: show bgp neighbors 10.0.12.3 received-routes"],
+    "o_peering": ["leaf1: vtysh -c \"show bgp summary\"", "leaf1: show ip interfaces"],
+    "o_advertise": ["leaf1: vtysh -c \"show bgp neighbors 10.0.12.1 advertised-routes\"", "leaf1: vtysh -c \"show bgp neighbors 10.0.12.1 received-routes\"", "leaf1: vtysh -c \"show bgp neighbors 10.0.12.3 received-routes\""],
     "o_routes": ["leaf1: show ip route", "leaf1: show ip route 10.0.2.0/24"],
     "o_ecmp": ["leaf1: show ip route 10.0.2.0/24", "leaf1: vtysh -c \"show ip bgp 10.0.2.0/24\""],
     "o_journey": ["leaf1: vtysh -c \"show ip route 10.0.2.0/24\"", "leaf1: sonic-db-cli APPL_DB keys \"ROUTE_TABLE:10.0.2.0/24\"", "leaf1: sonic-db-cli ASIC_DB keys \"ASIC_STATE:SAI_OBJECT_TYPE_NEXT_HOP_GROUP*\""],
-    "o_timers": ["leaf1: show bgp neighbors 10.0.12.1"],
-    "o_messages": ["leaf1: show bgp neighbors 10.0.12.1"],
-    "o_dataplane": ["h1: ping -c 5 10.0.2.10", "leaf1: show bgp summary", "leaf1: show ip route 10.0.2.0/24"],
-    "after_chaos": ["leaf1: show bgp summary", "leaf1: show ip route 10.0.2.0/24", "leaf1: show interfaces status", "leaf1: sonic-db-cli APPL_DB keys \"ROUTE_TABLE:10.0.2.0/24\"", "h1: ping -c 10 10.0.2.10", "leaf2: show bgp summary"]
+    "o_timers": ["leaf1: vtysh -c \"show bgp neighbors 10.0.12.1\""],
+    "o_messages": ["leaf1: vtysh -c \"show bgp neighbors 10.0.12.1\""],
+    "o_dataplane": ["h1: ping -c 5 10.0.2.10", "leaf1: vtysh -c \"show bgp summary\"", "leaf1: show ip route 10.0.2.0/24"],
+    "after_chaos": ["leaf1: vtysh -c \"show bgp summary\"", "leaf1: show ip route 10.0.2.0/24", "leaf1: show interfaces status", "leaf1: sonic-db-cli APPL_DB keys \"ROUTE_TABLE:10.0.2.0/24\"", "h1: ping -c 10 10.0.2.10", "leaf2: vtysh -c \"show bgp summary\""]
   },
   "chaos_ids": ["c_shut_one_link", "c_shut_both_links", "c_bgp_admin_shut", "c_hold_timer_blackhole", "c_withdraw_only", "c_wrong_asn", "c_clear_bgp", "c_stop_bgp_service", "c_link_flap"],
   "enabled_chaos": ["c_shut_one_link", "c_shut_both_links", "c_bgp_admin_shut", "c_hold_timer_blackhole", "c_clear_bgp", "c_stop_bgp_service"],

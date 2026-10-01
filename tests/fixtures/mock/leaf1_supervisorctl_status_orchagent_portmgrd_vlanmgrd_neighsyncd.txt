@@ -1,0 +1,4 @@
+orchagent    RUNNING   pid 30, uptime 0:20:00
+portmgrd     RUNNING   pid 31, uptime 0:20:00
+vlanmgrd     RUNNING   pid 32, uptime 0:20:00
+neighsyncd   RUNNING   pid 33, uptime 0:20:00

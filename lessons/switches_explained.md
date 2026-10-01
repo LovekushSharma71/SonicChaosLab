@@ -59,9 +59,10 @@
 | 22 | t_boundary | teach | S8: The edge of the L2 world — why h1 never "switches" to h3 | optional |
 | 23 | o_boundary | observe | S8: Ping h3, then prove no h3 MAC was ever learned | optional |
 | 24 | q_boundary | qna | S8: Questions — the L2/L3 boundary | optional |
-| 25 | chaos | chaos_select | Pick one failure to inject (8 options) | core |
-| 26 | q_impact | qna | Questions — interrogate the failure you injected | core |
-| 27 | restore | restore | Heal the lab, verify baseline (re-ping, re-count) | core |
+| 25 | q_baseline | qna | Questions — interrogate the healthy baseline | core |
+| 26 | chaos | chaos_select | Pick one failure to inject (8 options) | core |
+| 27 | q_impact | qna | Questions — interrogate the failure you injected | core |
+| 28 | restore | restore | Heal the lab, verify baseline (re-ping, re-count) | core |
 
 ## Teach Sections
 
@@ -76,9 +77,9 @@
 
 Admin down forces the operational state down. Admin up guarantees nothing — it is a request, not a result. Whenever a network "doesn't work," the first split-second question is always: which of these two is down, on which end? That distinction — intent vs. reality — will follow you through this entire course.
 
-**On SONiC.** The command you are about to run, `show interfaces status`, prints one row per port. Read four columns: the port name (Ethernet0, Ethernet4, Ethernet8 …), Oper, Admin, and MTU. In this lab, leaf1's Ethernet0 and Ethernet4 run to the other switch (leaf2), and Ethernet8 runs to the host h1. All three should show Oper up, Admin up. Note the MTU column reading 9100 on every port — ignore it today, but remember it exists: an entire later lesson is about what happens when that number lies to you.
+**On SONiC.** The command you are about to run, `show interfaces status`, prints one row per port. Read four columns: the port name (Ethernet0, Ethernet4, Ethernet8 …), Oper, Admin, and MTU. In this lab, leaf1's Ethernet0 and Ethernet4 run to the other switch (leaf2), and Ethernet8 runs to the host h1. Expect Admin up on all four lesson ports — and here comes this lab's first broken window: **the Oper column reads "down" on this virtual switch even while traffic flows** (the virtual chip never reports link state back to the CLI's database). The step's second command, `ip -br link show`, asks the Linux kernel directly — its `LOWER_UP` flag is the real carrier truth, and you'll see it disagree with the CLI, port by port. Note the MTU column reading 9100 on every port — ignore it today, but remember it exists: an entire later lesson is about what happens when that number lies to you.
 
-**Boundaries.** Nothing here explains *how* the switch decides where frames go — that is the MAC table, three scenarios from now. And "up" does not mean "working": you will meet failures later where every status column looks perfect while traffic dies.
+**Boundaries.** Nothing here explains *how* the switch decides where frames go — that is the MAC table, three scenarios from now. And "up" does not mean "working": you have just seen the reverse too — a status column can look broken while traffic is perfect. Trust, but verify against a second source; this course always shows you where the second source lives.
 
 ### SECTION: t_lldp — S2: How switches introduce themselves — LLDP
 
@@ -89,9 +90,9 @@ Admin down forces the operational state down. Admin up guarantees nothing — it
 1. Cards are *link-local*: a switch never forwards them onward. Your neighbor table only ever shows direct physical neighbors.
 2. The table is *lease-based*: if cards stop arriving, the entry survives until its TTL runs out, then quietly disappears. LLDP therefore notices silence slowly — worth remembering when we later kill it on purpose.
 
-**On SONiC.** LLDP runs in its own container (a theme you will meet properly in Lesson 2: SONiC is a fleet of containers). A helper process copies every received card into a live database table called LLDP_ENTRY_TABLE — your first hint that everything the CLI shows you is actually rows in a database. `show lldp table` prints the summary: LocalPort (where the card arrived), RemoteDevice (the neighbor's name), RemotePortID (which of the neighbor's ports faces you). `show lldp neighbors Ethernet0` shows one card in full detail, including the TTL. Expect leaf2 to appear twice — once via Ethernet0, once via Ethernet4 — because two parallel cables join the switches. The host h1 will usually NOT appear: plain Linux hosts don't speak LLDP unless someone installs a daemon.
+**On SONiC.** LLDP runs in its own container (a theme you will meet properly in Lesson 2: SONiC is a fleet of containers). A helper process copies every received card into a live database table called LLDP_ENTRY_TABLE — your first hint that everything the CLI shows you is actually rows in a database. `show lldp table` prints the summary: LocalPort (where the card arrived), RemoteDevice (the neighbor's name), RemotePortID (which of the neighbor's ports faces you). On hardware you would see leaf2 twice — once via Ethernet0, once via Ethernet4 (two parallel cables) — and h1 absent (plain Linux hosts don't speak LLDP unless a daemon is installed). **On this lab image the LLDP daemon isn't shipped at all** (verified: no lldpd/lldpcli binaries), so the observe step shows the command erroring on an empty card file — run it anyway: recognizing "the service behind this table doesn't exist here" is itself a diagnostic skill, and the table shape above is what you'll read on real gear.
 
-**Boundaries.** LLDP is eyes, not hands: disabling it changes nothing about how traffic flows — a fact one of the chaos options lets you prove.
+**Boundaries.** LLDP is eyes, not hands: disabling it changes nothing about how traffic flows. (The chaos option that would prove this is parked on this image — there is no LLDP service to kill.)
 
 ### SECTION: t_vlan — S3: VLANs — one box, many isolated switches
 
@@ -114,7 +115,7 @@ Admin down forces the operational state down. Admin up guarantees nothing — it
 
 Note what the table never contains: IP addresses. Switches forward on MACs within a VLAN; they are completely blind to IP.
 
-**On SONiC.** `show mac` prints the live table: Vlan, MacAddress, Port, and Type (Dynamic = learned; Static = pinned by an operator — rare) plus a total count at the bottom; `show mac -c` prints just the count. The observe step choreographs the learning live from a guaranteed blank slate: it first wipes the learned table (a harmless reset — the table is a cache, and you will study exactly this action as chaos option B), shows the empty table, then h1 pings its gateway (10.0.1.1 — the switch's own Vlan10 address), then looks again. Expect a new Dynamic entry: h1's MAC (pinned in this lab to 02:00:00:00:01:10) in Vlan 10 on Ethernet8. You will have watched a switch learn.
+**On SONiC.** `show mac` prints the live table: Vlan, MacAddress, Port, and Type (Dynamic = learned; Static = pinned by an operator — rare) plus a total count at the bottom; `show mac -c` prints just the count. On this virtual lab the readable truth is the kernel bridge's table — `bridge fdb show br Bridge` — because the virtual ASIC never reports learn events back into the database `show mac` renders (a preview of Lesson 2's pipeline). The observe step choreographs the learning live from a guaranteed blank slate: it wipes the learned table (a harmless reset — the table is a cache, and you will study exactly this action as chaos option B), shows it empty, has h1 ping its gateway (10.0.1.1 — the switch's own Vlan10 address), then looks again. Expect a new learned entry: h1's MAC (pinned in this lab to 02:00:00:00:01:10) in vlan 10 on Ethernet8 — and note the final `show mac` reading empty while the bridge holds the truth. You will have watched a switch learn.
 
 **Boundaries.** The table is a cache, not a config — and caches expire. That's the next scenario. And one subtlety for later: a *wrong* entry is far worse than a missing one (missing → flood → self-heals; wrong → silent blackhole). Chaos option 8 weaponizes exactly this.
 
@@ -124,7 +125,7 @@ Note what the table never contains: IP addresses. Switches forward on MACs withi
 
 **Mechanism.** Each dynamic entry carries a countdown that resets every time a frame from that MAC arrives. If the host goes quiet long enough, the countdown ends and the entry is deleted. The next frame *to* that host is then an **unknown unicast** — a frame addressed to a single MAC the table doesn't know — and it gets flooded, exactly like scenario S4 described, until the host's reply re-teaches the switch. Why forget at all? Because hosts move: unplug h1 from Ethernet8, plug it in elsewhere, and a permanent entry pointing at Ethernet8 would blackhole its traffic forever. Aging bounds how long any stale claim survives. The cost is negligible: relearning takes one round trip.
 
-**On SONiC.** `show mac aging-time` prints the configured aging period in seconds; `show mac -c` gives the current entry count. Two things to notice in the observe step: the aging value itself (note it — it explains how long chaos aftermath lingers), and how small the table is in a 4-device lab. Chaos option B (`sonic-clear fdb all`) is simply "aging, everywhere, right now" — the observe/diff machinery will let you time how fast the table refills.
+**On SONiC.** `show mac aging-time` names the SONiC-level aging surface (unset on this lab — it reports "not configured"); the kernel's live value sits in `ip -d link show Bridge` as `ageing_time` in centiseconds (30000 = 300 s). Two things to notice in the observe step: the aging value itself (note it — it explains how long chaos aftermath lingers), and how small the table is in a 6-device lab (`bridge fdb show br Bridge`). Chaos option B (the FDB flush) is simply "aging, everywhere, right now" — the observe/diff machinery will let you time how fast the table refills.
 
 **Boundaries.** Static entries never age — they are operator promises, not observations. And do not confuse MAC aging with ARP timeouts: different table, different layer, different clock (ARP appears in S8).
 
@@ -134,12 +135,12 @@ Note what the table never contains: IP addresses. Switches forward on MACs withi
 
 **Mechanism.** SONiC runs several logical Redis databases, each with a number and a job. Two matter today:
 
-- **APPL_DB** (database 0) — tables that SONiC services *produce* as their working state for the forwarding layer. The LLDP card file lives here: keys shaped like `LLDP_ENTRY_TABLE:Ethernet0`, one per port with a neighbor.
-- **ASIC_DB** (database 1) — the exact objects the switching chip (here: a *virtual* chip, since this is a software switch) has been told to hold, in a vendor-neutral vocabulary called SAI. Learned MACs surface here as `…SAI_OBJECT_TYPE_FDB_ENTRY…` keys — the chip reports what it learned, and this database is the record.
+- **APPL_DB** (database 0) — tables that SONiC services *produce* as their working state for the forwarding layer. On hardware the LLDP card file lives here: keys shaped like `LLDP_ENTRY_TABLE:Ethernet0`, one per port with a neighbor. (This image ships no LLDP stack, so the step's LLDP hunt reads empty — you're probing where the rows *would* be.)
+- **ASIC_DB** (database 1) — the exact objects the switching chip (here: a *virtual* chip, since this is a software switch) has been told to hold, in a vendor-neutral vocabulary called SAI. On real hardware, learned MACs surface here as `…SAI_OBJECT_TYPE_FDB_ENTRY…` keys — the chip reports what it learned, and this database is the record.
 
 There is a third name to file away: **CONFIG_DB** (database 4) — your *intent*, everything you configure. Lesson 2 is entirely about how intent flows from CONFIG_DB through the other databases down to the chip. Today we only peek at the two "live state" databases.
 
-**On SONiC.** `sonic-db-cli <DBNAME> keys "<pattern>"` lists matching keys; `sonic-db-cli <DBNAME> hgetall "<key>"` dumps one row's fields. The observe step first has h1 ping the gateway (so a fresh MAC entry certainly exists), then hunts for FDB entries in ASIC_DB *and* in APPL_DB's FDB_TABLE, then dumps one LLDP row. On this virtual switch expect the dynamic MAC to appear in ASIC_DB; APPL_DB's FDB_TABLE is the channel used for *programmed* entries and may be empty here — seeing which database holds what is the entire point of the exercise.
+**On SONiC.** `sonic-db-cli <DBNAME> keys "<pattern>"` lists matching keys; `sonic-db-cli <DBNAME> hgetall "<key>"` dumps one row's fields. The observe step first has h1 ping the gateway (so a fresh MAC entry certainly exists), then hunts for FDB entries in ASIC_DB *and* in APPL_DB's FDB_TABLE, then probes where LLDP rows would live. Verified on this lab: **every hunt comes back empty** — the virtual chip's learn events never reach the Redis pipeline, and the LLDP service doesn't exist on this image — while the kernel bridge (`bridge fdb show br Bridge`, the step's final command) proves the MAC *was* learned. That contrast is this lab's live proof that each database only shows what some service *wrote into it*, not the wire: no writer, no rows, even when the forwarding is fine.
 
 **Boundaries.** Reading Redis is always safe. *Writing* raw keys bypasses every validation layer SONiC has — that is a chaos experiment (option 8 does it deliberately), never a habit.
 
@@ -149,7 +150,7 @@ There is a third name to file away: **CONFIG_DB** (database 4) — your *intent*
 
 **Mechanism.** Counters are monotonic: they only ever increase, so you never read one — you read it twice and subtract. The vocabulary: **RX** = received (into the switch), **TX** = transmitted (out of the switch), and per-direction buckets for OK frames, errors (damaged frames), **drops** (healthy frames the switch discarded — no room, no rule, no VLAN…), and overruns. A healthy quiet port shows OK counters creeping and error/drop buckets frozen. A drop bucket that moves while users complain is a smoking gun.
 
-**On SONiC.** Counters are polled from the (virtual) chip into a dedicated database (COUNTERS_DB — Lesson 2 territory) every few seconds, so freshly generated traffic can take a moment to appear in the output. The observe step uses a clean experimental pattern you should steal for real life: `sonic-clear counters` sets a personal zero-point (it does not touch the switch's true totals — it just makes *your* next reading start from zero), then h1 generates a known burst of pings, then `show interfaces counters` — watch RX_OK and TX_OK move on Ethernet8, and confirm RX_DRP / RX_ERR stay flat.
+**On SONiC.** Counters are polled from the chip into a dedicated database (COUNTERS_DB — Lesson 2 territory) every few seconds. The observe step uses a clean experimental pattern you should steal for real life: `sonic-clear counters` sets a personal zero-point (it does not touch the switch's true totals — it just makes *your* next reading start from zero), then h1 generates a known burst of pings, then `show interfaces counters`. On hardware you would watch RX_OK and TX_OK move on Ethernet8 while RX_DRP / RX_ERR stay flat. **On this lab image every cell reads N/A** (verified: the virtual chip implements no counters and the poller has nothing to poll) — another broken window: the *workflow* is the lesson here; the numbers arrive when the chip is real.
 
 **Boundaries.** On this virtual switch, counter freshness is best-effort — trends are trustworthy, exact per-packet accounting is not. Queue, PFC, and watermark counters exist on real systems and are out of scope here.
 
@@ -164,7 +165,7 @@ There is a third name to file away: **CONFIG_DB** (database 4) — your *intent*
 
 10.0.2.10 is outside h1's 10.0.1.0/24, so h1 wraps the packet for h3 inside a frame addressed to 10.0.1.1's MAC — leaf1's own Vlan10 interface. At Layer 2, h1 only ever converses with its gateway. h3's MAC never crosses into Vlan10, never gets learned, never appears.
 
-**On SONiC.** The observe step pings h3 from h1 (it succeeds — the two switches route it; how they know the way is Lesson 3's flagship topic), then collects the evidence: `show mac` on leaf1 — h1's MAC is there, h3's is nowhere; `show arp` on leaf1 — the switch resolved 10.0.1.10 on Vlan10 (the gateway keeps its own ARP cache, because routing made it a *sender* of frames toward h1); and h1's own neighbor cache (`ip neigh show`) — containing the gateway, not h3. Working ping + absent MAC = the packet was routed, not switched. That is the boundary.
+**On SONiC.** The observe step pings h3 from h1 (it succeeds — the two switches route it; how they know the way is Lesson 3's flagship topic), then collects the evidence: the FDB (`bridge fdb show br Bridge`) on leaf1 — h1's MAC is there, h3's is nowhere; `show arp` on leaf1 — the switch resolved 10.0.1.10 on Vlan10 (the gateway keeps its own ARP cache, because routing made it a *sender* of frames toward h1); and h1's own neighbor cache (`ip neigh show`) — containing the gateway, not h3. Working ping + absent MAC = the packet was routed, not switched. That is the boundary.
 
 **Boundaries.** How leaf1 knows that 10.0.2.0/24 lives behind leaf2 — the routing table, BGP, reconvergence — is deliberately left dark until Lesson 3. Today you only need to know the L2 world has an edge, and you've now stood on it.
 
@@ -187,22 +188,25 @@ Convention: `<target>: <command>` — targets are `leaf1` (SONiC CLI via docker 
 
 #### o_mac  *(mutating-lite: wipes the self-repopulating MAC cache + generates traffic; no config change; no cleanup needed)*
 - `leaf1: sonic-clear fdb all`
-- `leaf1: show mac`
-- `leaf1: show mac -c`
+- `leaf1: bridge fdb flush dev Bridge dynamic`
+- `leaf1: bridge fdb show br Bridge`
 - `h1: ping -c 3 10.0.1.1`
+- `leaf1: bridge fdb show br Bridge`
 - `leaf1: show mac`
-- `leaf1: show mac -c`
 
 #### o_age
 - `leaf1: show mac aging-time`
-- `leaf1: show mac -c`
+- `leaf1: ip -d link show Bridge`
+- `h1: ping -c 3 10.0.1.1`
+- `leaf1: bridge fdb show br Bridge`
 
 #### o_redis  *(mutating-lite: generates traffic; no config change)*
 - `h1: ping -c 3 10.0.1.1`
 - `leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_FDB_ENTRY*"`
 - `leaf1: sonic-db-cli APPL_DB keys "FDB_TABLE*"`
 - `leaf1: sonic-db-cli APPL_DB keys "LLDP_ENTRY_TABLE*"`
-- `leaf1: sonic-db-cli APPL_DB hgetall "LLDP_ENTRY_TABLE:Ethernet0"`  `[VERIFY-ON-LAB: exact key name/separator — take it from the keys listing above]`
+- `leaf1: sonic-db-cli APPL_DB hgetall "LLDP_ENTRY_TABLE:Ethernet0"`
+- `leaf1: bridge fdb show br Bridge`
 
 #### o_counters  *(mutating-lite: resets the user-view counter baseline + generates traffic)*
 - `leaf1: sonic-clear counters`
@@ -212,7 +216,7 @@ Convention: `<target>: <command>` — targets are `leaf1` (SONiC CLI via docker 
 #### o_boundary  *(mutating-lite: generates traffic)*
 - `h1: ping -c 3 10.0.2.10`
 - `h1: ip neigh show`
-- `leaf1: show mac`
+- `leaf1: bridge fdb show br Bridge`
 - `leaf1: show arp`
 
 ### After-chaos commands
@@ -221,8 +225,7 @@ Run after any injection (the engine diffs these against baseline facts):
 
 - `leaf1: show interfaces status`
 - `leaf1: show vlan brief`
-- `leaf1: show mac`
-- `leaf1: show mac -c`
+- `leaf1: bridge fdb show br Bridge`
 - `leaf1: show lldp table`
 - `leaf1: show ip interfaces`
 - `h1: ping -c 5 10.0.1.1`
@@ -239,6 +242,8 @@ show interfaces description*
 show interfaces counters*
 show interfaces switchport*
 show mac*
+bridge fdb*
+ip -d link show*
 show vlan*
 show lldp*
 show arp*
@@ -260,7 +265,7 @@ config interface startup*
 config vlan*
 config interface ip*
 config feature state lldp*
-docker ps*
+supervisorctl status*
 ```
 
 ## Chaos Options
@@ -276,6 +281,7 @@ All options are restorable to baseline. "Injection-failed tell" = how the app (o
 - **restore:**
   - `leaf1: sudo config interface startup Ethernet8`
   - `h1: ping -c 3 10.0.1.1`  *(repopulate FDB/ARP, prove recovery)*
+  - `h2: ping -c 2 10.0.1.1`  *(relearn the second host too — verify compares full FDB)*
 - **expected effects (words):** Ethernet8 flips to Admin down and Oper down within a second or two. h1→gateway ping goes to 100% loss immediately. h1's FDB entry disappears (flush on port-down) `[VERIFY-ON-LAB: whether vs flushes immediately or entry lingers until aging]`. VLAN membership, LLDP entries on Ethernet0/4, and inter-switch state are untouched. After restore: link returns Oper up within seconds; first ping re-ARPs and re-learns; loss ends immediately after link-up.
 - **plan-B variant:** shut from the *host* side instead — `h1: ip link set eth1 down` / `... up`. Same user impact, but leaf1 shows Ethernet8 Admin **up** / Oper **down** — the perfect admin-vs-operational teaching contrast.
 - **injection-failed tell:** `show interfaces status` still lists Ethernet8 Admin=up after inject → the config write did not land (retry; check CONFIG_DB PORT|Ethernet8 admin_status).
@@ -286,9 +292,11 @@ All options are restorable to baseline. "Injection-failed tell" = how the app (o
 - **type:** config · **risk:** low · **enabled:** true
 - **inject:**
   - `leaf1: sonic-clear fdb all`
+  - `leaf1: bridge fdb flush dev Bridge dynamic`
 - **restore:** *(no config to undo — restore = force relearn and verify)*
   - `h1: ping -c 3 10.0.1.1`
-  - `leaf1: show mac -c`
+  - `h2: ping -c 2 10.0.1.1`
+  - `leaf1: bridge fdb show br Bridge`
 - **expected effects (words):** MAC entry count drops to zero (or near zero) instantly. User traffic is barely dented: the next frame to an unknown MAC floods, the reply relearns, so expect zero or at most one lost ping `[VERIFY-ON-LAB: first-ping loss after flush]`. This is the "failure" that isn't one — it teaches that the FDB is a disposable cache.
 - **plan-B variant:** natural aging instead of a flush — stop all traffic from h1 and wait out the aging time (slow; shows the same lifecycle without a command).
 - **injection-failed tell:** `show mac -c` unchanged immediately after inject → clear didn't execute.
@@ -339,7 +347,7 @@ All options are restorable to baseline. "Injection-failed tell" = how the app (o
 ---
 
 **6. id: `c_lldp_stop` — "Silence the introductions: disable LLDP"**
-- **type:** service · **risk:** low · **enabled:** true
+- **type:** service · **risk:** low · **enabled:** false  *(verified: this image ships no lldpd — there is no LLDP service to stop, and the diff would read empty→empty)*
 - **inject:**
   - `leaf1: sudo config feature state lldp disabled`
 - **restore:**
@@ -387,11 +395,11 @@ Parsers available: `interface_status, mac_table, lldp_neighbors, vlan_membership
 | scenario (observe id) | parser(s) | key fields to extract | notes |
 |---|---|---|---|
 | o_ports | interface_status | per port: name, oper, admin, speed, mtu — anchor on Ethernet0/4/8 | assert all three oper=up admin=up mtu=9100 |
-| o_lldp | lldp_neighbors | per row: local_port, remote_device, remote_port_id | expect ≥2 rows (leaf2 via Ethernet0 and Ethernet4); h1 normally absent |
+| o_lldp | lldp_neighbors | per row: local_port, remote_device, remote_port_id | verified on vs: 0 rows — no lldpd on this image; the CLI errors on the empty card file (on hardware: ≥2 rows, leaf2 via Ethernet0/4) |
 | o_vlan | vlan_membership | vlan_id, ip_address, members[], tagging per member | expect vlan 10, ip 10.0.1.1/24, member Ethernet8 untagged |
 | o_mac | mac_table (post-wipe + post-ping), ping_loss | entries[]: vlan, mac, port, type; count; ping: tx, rx, loss% | count 0 after wipe, then new Dynamic entry 02:00:00:00:01:10 → Ethernet8 in vlan 10; loss ≈0% |
-| o_age | mac_table; **NEW-PARSER: mac_aging_time** (single line → integer seconds) | aging_seconds; count | aging value baseline-recorded `[VERIFY-ON-LAB: default aging value on vs]` |
-| o_redis | redis_keys | per query: db, pattern, key_count, sample_keys[] | expect ≥1 FDB key in ASIC_DB after ping; APPL_DB FDB_TABLE may be 0 `[VERIFY-ON-LAB]`; ≥2 LLDP_ENTRY_TABLE keys |
+| o_age | mac_table; **NEW-PARSER: mac_aging_time** (single line → integer seconds) | aging_seconds; count | verified on vs: `show mac aging-time` reports "not configured" — the live clock is the kernel's ageing_time 30000 cs (300 s); table repopulated by the step's warm ping |
+| o_redis | redis_keys | per query: db, pattern, key_count, sample_keys[] | verified on vs: FDB keys 0 in ASIC_DB *and* APPL_DB even after the ping (kernel bridge is the only true copy); LLDP_ENTRY_TABLE keys 0 (no LLDP stack on this image) |
 | o_counters | **NEW-PARSER: interface_counters** (per port: rx_ok, tx_ok, rx_err, rx_drp, tx_err, tx_drp) | Ethernet8 rx_ok/tx_ok deltas; error/drop buckets | counters may lag one poll cycle on vs `[VERIFY-ON-LAB: poll interval / freshness]`; optional scenario — parser can ship later, raw display acceptable meanwhile |
 | o_boundary | ping_loss, mac_table; **NEW-PARSER: arp_table** (rows: ip, mac, iface) from `show arp`; h1 `ip neigh show` displayed raw | ping h1→h3 loss 0%; mac_table contains h1's MAC only (no 02:00:00:00:02:10); arp_table has 10.0.1.10 on Vlan10 | punchline is the *absence* of h3's MAC — diff logic must support asserting absence |
 
@@ -399,7 +407,7 @@ Parsers available: `interface_status, mac_table, lldp_neighbors, vlan_membership
 
 | chaos id | facts that should CHANGE | facts that should NOT change | measure_recovery |
 |---|---|---|---|
-| c_shut_access | Ethernet8 Admin+Oper→down; ping(gw) 100%; ping(h3) 100%; mac_table loses h1 entry `[VERIFY-ON-LAB: flush-on-down]`; ASIC_DB FDB keys shrink | vlan_membership; lldp (Ethernet0/4); Ethernet0/4 status | yes — time from `startup` to first successful ping |
+| c_shut_access | Ethernet8 Admin+Oper→down; ping(gw) 100%; ping(h3) 100%; mac_table loses h1 entry (verified: kernel flushes on port-down) | vlan_membership; lldp (Ethernet0/4); Ethernet0/4 status | yes — time from `startup` to first successful ping |
 | c_clear_fdb | mac count →0 momentarily | interface_status; vlan; lldp; ping ≈0% loss | yes — time to count ≥1 after restore ping |
 | c_vlan_member_del | vlan_membership loses Ethernet8; ping(gw+h3) 100%; mac entry gone | interface_status (all up!); lldp | yes |
 | c_wrong_vlan | vlan_membership: new vlan 50 w/ Ethernet8; mac entry present but vlan=50; ping 100% | interface_status; lldp | yes |
@@ -440,8 +448,9 @@ Port/link state (admin vs operational), frames and MAC addresses, VLANs and acce
 - **`show lldp neighbors <port>`** — one card in detail: ChassisID (neighbor's MAC-based identity), SysName, SysDescr (OS/version string), TTL (seconds the entry may be trusted without refresh), MgmtIP if advertised, capability flags, PortID/PortDescr.
 - **`show vlan brief`** — per VLAN: VLAN ID; IP Address if a VLAN interface owns one (10.0.1.1/24 on Vlan10 = h1's gateway); Ports: members; Port Tagging: untagged (access-style) or tagged; DHCP Helper / Proxy ARP: unused here (expect empty/disabled).
 - **`show vlan config`** — same membership as flat rows: Name (VlanNN), VID (number), Member (port), Mode (untagged/tagged).
-- **`show mac`** — the FDB. No.: row index. Vlan: VLAN the entry lives in. MacAddress: the learned/pinned MAC. Port: exit port for frames *to* that MAC. Type: Dynamic (learned, ages out) or Static (operator-pinned, never ages). Footer: total count. `show mac -c`: count only.
-- **`show mac aging-time`** — single line stating the aging period in seconds for dynamic entries.
+- **`show mac`** — the FDB. No.: row index. Vlan: VLAN the entry lives in. MacAddress: the learned/pinned MAC. Port: exit port for frames *to* that MAC. Type: Dynamic (learned, ages out) or Static (operator-pinned, never ages). Footer: total count. `show mac -c`: count only. On docker-sonic-vs this view reads empty (learn events never reach ASIC_DB) — a live illustration that the CLI shows a database, not the wire.
+- **`bridge fdb show br Bridge`** — the kernel bridge's forwarding database: `<mac> dev <port> vlan <vid> master Bridge` per learned row (`permanent` rows are the switch's own addresses). On the virtual switch this is the ground truth the lesson's facts are read from.
+- **`show mac aging-time`** — single line stating the aging period in seconds for dynamic entries. Kernel equivalent: `ip -d link show Bridge` → `ageing_time` (centiseconds; 30000 = 300 s).
 - **`show arp`** — the switch's own IP→MAC resolutions (it needs them because its VLAN interface makes it a traffic *sender*). Address: neighbor IP. MacAddress: resolved MAC. Iface: port/VLAN the neighbor was seen on. Vlan: VLAN ID when applicable.
 - **`show ip interfaces`** — L3 addresses owned by the switch per interface, with Admin/Oper — the only table that betrays chaos option 5.
 - **`show interfaces counters`** — per port: STATE (U=up, D=down, X=disabled); RX_OK/TX_OK: good frames in/out; RX_BPS/TX_BPS + UTIL: rates (may read N/A between polls on vs); RX_ERR/TX_ERR: damaged frames; RX_DRP/TX_DRP: healthy frames discarded; RX_OVR/TX_OVR: overruns. `sonic-clear counters` zeroes the *user's* view only.
@@ -453,10 +462,10 @@ Port/link state (admin vs operational), frames and MAC addresses, VLANs and acce
 
 - Ethernet0, Ethernet4, Ethernet8 on leaf1: Oper up, Admin up, MTU 9100.
 - `show vlan brief`: exactly VLAN 10, IP 10.0.1.1/24, member Ethernet8, untagged.
-- `show lldp table`: leaf2 visible twice (via Ethernet0 and Ethernet4) with its port IDs; typically no entry for Ethernet8 (h1 doesn't speak LLDP); entry count ≥2.
-- `show mac` after any h1 ping: at least one Dynamic entry — 02:00:00:00:01:10, Vlan 10, Ethernet8. Before any traffic (or after aging), the table may legitimately be empty.
-- `show mac aging-time`: a positive number of seconds `[VERIFY-ON-LAB: capture the default and pin it in this card]`.
-- Redis: ASIC_DB has ≥1 SAI_OBJECT_TYPE_FDB_ENTRY key after a ping; APPL_DB has ≥2 LLDP_ENTRY_TABLE keys; APPL_DB FDB_TABLE expected empty on vs `[VERIFY-ON-LAB]`.
+- `show lldp table`: empty on this image (no lldpd shipped — the CLI errors on an empty card file). On hardware: leaf2 visible twice (via Ethernet0 and Ethernet4); typically no entry for Ethernet8 (h1 doesn't speak LLDP).
+- `bridge fdb show br Bridge` after any h1 ping: at least one learned entry — 02:00:00:00:01:10 on Ethernet8, vlan 10 (`show mac` stays empty on vs — expected).
+- `show mac aging-time`: "not configured" on vs; the kernel ageing_time is 30000 cs (300 s) via `ip -d link show Bridge`.
+- Redis: ASIC_DB SAI_OBJECT_TYPE_FDB_ENTRY keys: **0 on vs even after a ping** (verified — learn events never reach the pipeline; the kernel bridge holds the real table); APPL_DB FDB_TABLE likewise empty; LLDP_ENTRY_TABLE keys 0 (no LLDP stack on this image).
 - h1→10.0.1.1 and h1→10.0.2.10: 0% loss, sub-10 ms rtt typical for containers `[VERIFY-ON-LAB: typical rtt]`.
 - Counters: RX_OK/TX_OK on Ethernet8 increase by roughly the ping count (± poll lag); RX_DRP/RX_ERR flat at ~0.
 
@@ -632,6 +641,11 @@ ethernet0, ethernet4, ethernet8, vlan10, h1, leaf1
 7. What is in h1's neighbor cache after the ping, and what state is the entry in?
 8. If both hosts were in Vlan10 on the same switch, how would this picture change?
 
+#### q_baseline
+1. ★ What is the difference between the Admin and Oper columns?
+2. ★ Why can a port be Admin up but Oper down — what are the possible causes?
+3. ★ Which ports on leaf1 go to leaf2 and which go to h1, and how would I check without a diagram?
+
 #### q_impact
 1. ★ What changed after the injection — which ports, MAC entries, or pings?
 2. ★ Why did reachability break or survive the way it did?
@@ -641,10 +655,10 @@ ethernet0, ethernet4, ethernet8, vlan10, h1, leaf1
 
 Consolidated checklist of every `[VERIFY-ON-LAB]` marker in this lesson:
 
-1. **FDB location on vs:** after an h1 ping, confirm learned MAC appears in ASIC_DB (`SAI_OBJECT_TYPE_FDB_ENTRY*`) and whether APPL_DB `FDB_TABLE*` stays empty — then delete the losing claim from t_redis / Observe / Knowledge Card.
-2. **LLDP_ENTRY_TABLE key format:** exact key string (separator, port name) for the `hgetall` in o_redis.
-3. **Default MAC aging time** on docker-sonic-vs: capture the value from `show mac aging-time`, pin it into the Knowledge Card healthy-state section.
-4. **FDB flush on port-down:** does `config interface shutdown Ethernet8` remove h1's entry immediately, or does it linger until aging (c_shut_access effects, after-chaos map).
+1. **FDB location on vs:** ✅ RESOLVED (2026-10-01) — ASIC_DB `SAI_OBJECT_TYPE_FDB_ENTRY*` and APPL_DB `FDB_TABLE*` stay empty on vs even after pings; the kernel bridge (`bridge fdb show br Bridge`) is the only true copy. Claims corrected in t_redis / Observe / facts matrix / Knowledge Card.
+2. **LLDP_ENTRY_TABLE key format:** key shape is `LLDP_ENTRY_TABLE:Ethernet0` (plain colon separator).
+3. **Default MAC aging time:** ✅ RESOLVED — `show mac aging-time` reports "not configured" on vs; kernel ageing_time 30000 cs (300 s) via `ip -d link show Bridge`.
+4. **FDB flush on port-down:** ✅ RESOLVED — the kernel removes h1's entry immediately on `shutdown Ethernet8` (verified in chaos diffs).
 5. **Link recovery time** after `startup Ethernet8` (seconds until Oper up + first successful ping) — pin timing in Knowledge Card.
 6. **First-ping loss after `sonic-clear fdb all`** — 0 or 1 lost probes?
 7. **c_vlan_member_del plan-B:** `config switchport mode routed` ordering constraints when the port still has membership.
@@ -688,6 +702,7 @@ Consolidated checklist of every `[VERIFY-ON-LAB]` marker in this lesson:
     {"id": "t_boundary", "kind": "teach", "core": false},
     {"id": "o_boundary", "kind": "observe", "core": false},
     {"id": "q_boundary", "kind": "qna", "core": false},
+    {"id": "q_baseline", "kind": "qna", "core": true},
     {"id": "chaos", "kind": "chaos_select", "core": true},
     {"id": "q_impact", "kind": "qna", "core": true},
     {"id": "restore", "kind": "restore", "core": true}
@@ -696,15 +711,15 @@ Consolidated checklist of every `[VERIFY-ON-LAB]` marker in this lesson:
     "o_ports": ["leaf1: show interfaces status"],
     "o_lldp": ["leaf1: show lldp table", "leaf1: show lldp neighbors Ethernet0"],
     "o_vlan": ["leaf1: show vlan brief", "leaf1: show vlan config"],
-    "o_mac": ["leaf1: sonic-clear fdb all", "leaf1: show mac", "leaf1: show mac -c", "h1: ping -c 3 10.0.1.1", "leaf1: show mac", "leaf1: show mac -c"],
-    "o_age": ["leaf1: show mac aging-time", "leaf1: show mac -c"],
-    "o_redis": ["h1: ping -c 3 10.0.1.1", "leaf1: sonic-db-cli ASIC_DB keys \"ASIC_STATE:SAI_OBJECT_TYPE_FDB_ENTRY*\"", "leaf1: sonic-db-cli APPL_DB keys \"FDB_TABLE*\"", "leaf1: sonic-db-cli APPL_DB keys \"LLDP_ENTRY_TABLE*\"", "leaf1: sonic-db-cli APPL_DB hgetall \"LLDP_ENTRY_TABLE:Ethernet0\""],
+    "o_mac": ["leaf1: sonic-clear fdb all", "leaf1: bridge fdb flush dev Bridge dynamic", "leaf1: bridge fdb show br Bridge", "h1: ping -c 3 10.0.1.1", "leaf1: bridge fdb show br Bridge", "leaf1: show mac"],
+    "o_age": ["leaf1: show mac aging-time", "leaf1: ip -d link show Bridge", "h1: ping -c 3 10.0.1.1", "leaf1: bridge fdb show br Bridge"],
+    "o_redis": ["h1: ping -c 3 10.0.1.1", "leaf1: sonic-db-cli ASIC_DB keys \"ASIC_STATE:SAI_OBJECT_TYPE_FDB_ENTRY*\"", "leaf1: sonic-db-cli APPL_DB keys \"FDB_TABLE*\"", "leaf1: sonic-db-cli APPL_DB keys \"LLDP_ENTRY_TABLE*\"", "leaf1: sonic-db-cli APPL_DB hgetall \"LLDP_ENTRY_TABLE:Ethernet0\"", "leaf1: bridge fdb show br Bridge"],
     "o_counters": ["leaf1: sonic-clear counters", "h1: ping -c 10 10.0.1.1", "leaf1: show interfaces counters"],
-    "o_boundary": ["h1: ping -c 3 10.0.2.10", "h1: ip neigh show", "leaf1: show mac", "leaf1: show arp"],
-    "after_chaos": ["leaf1: show interfaces status", "leaf1: show vlan brief", "leaf1: show mac", "leaf1: show mac -c", "leaf1: show lldp table", "leaf1: show ip interfaces", "h1: ping -c 5 10.0.1.1", "h1: ping -c 5 10.0.2.10", "leaf1: sonic-db-cli ASIC_DB keys \"ASIC_STATE:SAI_OBJECT_TYPE_FDB_ENTRY*\""]
+    "o_boundary": ["h1: ping -c 3 10.0.2.10", "h1: ip neigh show", "leaf1: bridge fdb show br Bridge", "leaf1: show arp"],
+    "after_chaos": ["leaf1: show interfaces status", "leaf1: show vlan brief", "leaf1: bridge fdb show br Bridge", "leaf1: show lldp table", "leaf1: show ip interfaces", "h1: ping -c 5 10.0.1.1", "h1: ping -c 5 10.0.2.10", "leaf1: sonic-db-cli ASIC_DB keys \"ASIC_STATE:SAI_OBJECT_TYPE_FDB_ENTRY*\""]
   },
   "chaos_ids": ["c_shut_access", "c_clear_fdb", "c_vlan_member_del", "c_wrong_vlan", "c_gw_ip_remove", "c_lldp_stop", "c_mac_flap", "c_static_mac_wrong_port"],
-  "enabled_chaos": ["c_shut_access", "c_clear_fdb", "c_vlan_member_del", "c_wrong_vlan", "c_gw_ip_remove", "c_lldp_stop"],
+  "enabled_chaos": ["c_shut_access", "c_clear_fdb", "c_vlan_member_del", "c_wrong_vlan", "c_gw_ip_remove"],
   "keywords": ["switch", "switching", "layer 2", "l2", "ethernet", "frame", "mac", "mac address", "mac table", "fdb", "forwarding database", "cam table", "learn", "learning", "flood", "flooding", "unknown unicast", "broadcast", "broadcast domain", "vlan", "access port", "untagged", "tagged", "trunk", "membership", "lldp", "neighbor", "discovery", "ttl", "link", "port", "interface", "admin", "oper", "operational", "link up", "link down", "shutdown", "startup", "aging", "age out", "expire", "arp", "arp table", "ip neighbor", "gateway", "default gateway", "svi", "vlan interface", "counters", "rx", "tx", "drops", "errors", "redis", "appl_db", "asic_db", "config_db", "fdb_table", "lldp_entry_table", "sonic-db-cli", "ping", "icmp", "loss", "ethernet0", "ethernet4", "ethernet8", "vlan10", "h1", "leaf1"],
   "glossary_terms": ["switch", "frame", "packet", "port", "link", "admin status", "operational status (Oper)", "MTU", "MAC address", "MAC table / FDB", "learning", "flooding", "unknown unicast", "aging / aging time", "static entry", "VLAN", "access port", "tagged / untagged", "broadcast domain", "broadcast", "ingress / egress", "LLDP", "neighbor (LLDP)", "TTL (LLDP)", "ARP", "default gateway", "subnet", "VLAN interface (SVI)", "router", "counter", "RX / TX", "drop", "Redis", "APPL_DB", "ASIC_DB", "CONFIG_DB", "COUNTERS_DB", "SAI", "sonic-db-cli", "ping / ICMP"]
 }

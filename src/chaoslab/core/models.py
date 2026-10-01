@@ -69,6 +69,7 @@ class RestoreOutcome(BaseModel):
     residual_changes: list[str]
     healed: bool
     recovery_seconds: float = 0.0
+    escalated: bool = False  # authored restore left residue → full baseline re-apply ran
 
 
 class ExperimentResult(BaseModel):

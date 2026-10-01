@@ -9,7 +9,7 @@
 - **devices used in this lesson:** `leaf1` primarily; `h1` for the one end-to-end reachability probe
 - **lab prerequisites assumed by this lesson (bake into topology):**
   - same baseline as Lesson 1, plus the two inter-switch links up and BGP established (leaf1 neighbors 10.0.12.1 and 10.0.12.3) so CONFIG_DB has a `BGP_NEIGHBOR` table to point at
-  - nested docker inside each SONiC node (docker-sonic-vs default) so `docker ps` / `docker exec` work on `leaf1`
+  - nested docker is ABSENT on docker-sonic-vs — container-level views map to `supervisorctl status` (one supervisord runs all process groups); `docker ps` / `docker exec` work only on real SONiC hardware/VMs
 - **command execution targets:** `leaf1:` = docker exec into SONiC vs (root; `sudo` retained for doc fidelity), `h1:` = docker exec into host container
 - **source URLs relied on:**
   - SONiC Architecture wiki (containers swss/syncd/bgp/lldp/database, the CONFIG_DB→APPL_DB→ASIC_DB pipeline, orchagent, syncd, SAI, STATE_DB, COUNTERS_DB, flex counters): <https://github.com/sonic-net/SONiC/wiki/Architecture>
@@ -56,9 +56,10 @@
 | 22 | t_procs | teach | S8: Inside a container — supervised processes | optional |
 | 23 | o_procs | observe | S8: orchagent, syncd, bgpd as ordinary processes | optional |
 | 24 | q_procs | qna | S8: Questions — processes | optional |
-| 25 | chaos | chaos_select | Pick one failure to inject (8 options) | core |
-| 26 | q_impact | qna | Questions — interrogate the failure you injected | core |
-| 27 | restore | restore | Heal the lab, verify baseline | core |
+| 25 | q_baseline | qna | Questions — interrogate the healthy baseline | core |
+| 26 | chaos | chaos_select | Pick one failure to inject (8 options) | core |
+| 27 | q_impact | qna | Questions — interrogate the failure you injected | core |
+| 28 | restore | restore | Heal the lab, verify baseline | core |
 
 ## Teach Sections
 
@@ -173,7 +174,7 @@ Convention: `<target>: <command>` — `leaf1` (SONiC vs via docker exec) and `h1
 ### Per-scenario observe commands
 
 #### o_containers
-- `leaf1: docker ps`
+- `leaf1: supervisorctl status`
 - `leaf1: show feature status`
 
 #### o_configdb
@@ -215,14 +216,14 @@ Convention: `<target>: <command>` — `leaf1` (SONiC vs via docker exec) and `h1
 - `leaf1: sudo config interface startup Ethernet4`
 
 #### o_procs
-- `leaf1: docker exec swss supervisorctl status`
-- `leaf1: docker exec bgp supervisorctl status`
+- `leaf1: supervisorctl status orchagent portmgrd vlanmgrd neighsyncd`
+- `leaf1: supervisorctl status bgpd zebra fpmsyncd staticd`
 
 ### After-chaos commands
 
 Run after any injection (the engine diffs these against baseline facts):
 
-- `leaf1: docker ps`
+- `leaf1: supervisorctl status`
 - `leaf1: show feature status`
 - `leaf1: show interfaces status`
 - `leaf1: show vlan brief`
@@ -250,8 +251,8 @@ sonic-db-cli ASIC_DB *
 sonic-db-cli STATE_DB *
 sonic-db-cli COUNTERS_DB *
 redis-cli *
-docker ps*
-docker exec * supervisorctl status*
+supervisorctl status*
+supervisorctl *
 config vlan*
 config interface shutdown*
 config interface startup*
@@ -267,9 +268,9 @@ All options are restorable to baseline. "Injection-failed tell" = how to detect 
 **1. id: `c_stop_swss` — "Decapitate the pipeline: stop the swss container" (ANCHOR A)**
 - **type:** service · **risk:** high · **enabled:** true
 - **inject:**
-  - `leaf1: sudo systemctl stop swss`
+  - `leaf1: supervisorctl stop orchagent`
 - **restore:**
-  - `leaf1: sudo systemctl start swss`
+  - `leaf1: supervisorctl start orchagent`
   - `h1: ping -c 3 10.0.2.10`
 - **expected effects (words):** orchagent and the managers vanish (`docker ps` loses swss; `show feature status` may still read enabled — intent vs reality again). The pipeline's middle is gone, so *new* configuration no longer reaches hardware. Existing forwarding often keeps working for a while because syncd and the ASIC still hold their programmed state — a striking lesson that the control plane and the already-programmed data plane are separable `[VERIFY-ON-LAB: whether h1↔h3 keeps flowing with swss down, and for how long]`. Recovery on `start` replays state from CONFIG_DB/APPL_DB; expect a rebuild period before everything is green `[VERIFY-ON-LAB: recovery time; whether syncd needs co-restart]`.
 - **plan-B variant:** `leaf1: sudo config feature state swss disabled` / `enabled` (feature surface instead of systemd).
@@ -606,6 +607,11 @@ config reload, vlan30, ethernet4, leaf1
 7. How would you check whether orchagent is actually running?
 8. What's the relationship between a "feature," a container, and its processes?
 
+#### q_baseline
+1. ★ What are the main SONiC containers and what does each one do?
+2. ★ What's the difference between a feature being "enabled" and its container being "running"?
+3. ★ Which containers form the spine of the forwarding pipeline, and why those?
+
 #### q_impact
 1. ★ What broke, and which databases or containers changed after the injection?
 2. ★ Why did the config intent stop reaching the applied state, or not?
@@ -656,20 +662,21 @@ config reload, vlan30, ethernet4, leaf1
     {"id": "t_procs", "kind": "teach", "core": false},
     {"id": "o_procs", "kind": "observe", "core": false},
     {"id": "q_procs", "kind": "qna", "core": false},
+    {"id": "q_baseline", "kind": "qna", "core": true},
     {"id": "chaos", "kind": "chaos_select", "core": true},
     {"id": "q_impact", "kind": "qna", "core": true},
     {"id": "restore", "kind": "restore", "core": true}
   ],
   "commands": {
-    "o_containers": ["leaf1: docker ps", "leaf1: show feature status"],
+    "o_containers": ["leaf1: supervisorctl status", "leaf1: show feature status"],
     "o_configdb": ["leaf1: sonic-db-cli CONFIG_DB keys \"PORT|*\"", "leaf1: sonic-db-cli CONFIG_DB hgetall \"PORT|Ethernet8\"", "leaf1: sonic-db-cli CONFIG_DB keys \"VLAN*\"", "leaf1: sonic-db-cli CONFIG_DB keys \"BGP_NEIGHBOR*\""],
     "o_pipeline": ["leaf1: sonic-db-cli CONFIG_DB keys \"VLAN|Vlan30\"", "leaf1: sonic-db-cli ASIC_DB keys \"ASIC_STATE:SAI_OBJECT_TYPE_VLAN*\"", "leaf1: sudo config vlan add 30", "leaf1: sonic-db-cli CONFIG_DB keys \"VLAN|Vlan30\"", "leaf1: sonic-db-cli APPL_DB keys \"VLAN_TABLE:Vlan30\"", "leaf1: sonic-db-cli ASIC_DB keys \"ASIC_STATE:SAI_OBJECT_TYPE_VLAN*\"", "leaf1: sudo config vlan del 30"],
     "o_statedb": ["leaf1: sonic-db-cli STATE_DB keys \"PORT_TABLE|Ethernet8\"", "leaf1: sonic-db-cli STATE_DB hgetall \"PORT_TABLE|Ethernet8\"", "leaf1: show interfaces status"],
     "o_asicdb": ["leaf1: sonic-db-cli ASIC_DB keys \"ASIC_STATE:SAI_OBJECT_TYPE_PORT*\"", "leaf1: sonic-db-cli ASIC_DB keys \"ASIC_STATE:SAI_OBJECT_TYPE_VLAN*\"", "leaf1: sonic-db-cli ASIC_DB hgetall \"VIDTORID\""],
     "o_counters": ["leaf1: sonic-db-cli COUNTERS_DB keys \"COUNTERS_PORT_NAME_MAP\"", "leaf1: sonic-db-cli COUNTERS_DB hgetall \"COUNTERS_PORT_NAME_MAP\"", "leaf1: show interfaces counters"],
     "o_admin_path": ["leaf1: sonic-db-cli CONFIG_DB hget \"PORT|Ethernet4\" admin_status", "leaf1: sudo config interface shutdown Ethernet4", "leaf1: sonic-db-cli CONFIG_DB hget \"PORT|Ethernet4\" admin_status", "leaf1: sonic-db-cli APPL_DB hget \"PORT_TABLE:Ethernet4\" admin_status", "leaf1: sonic-db-cli STATE_DB hget \"PORT_TABLE|Ethernet4\" oper_status", "leaf1: sudo config interface startup Ethernet4"],
-    "o_procs": ["leaf1: docker exec swss supervisorctl status", "leaf1: docker exec bgp supervisorctl status"],
-    "after_chaos": ["leaf1: docker ps", "leaf1: show feature status", "leaf1: show interfaces status", "leaf1: show vlan brief", "leaf1: sonic-db-cli CONFIG_DB dbsize", "leaf1: sonic-db-cli APPL_DB dbsize", "leaf1: sonic-db-cli ASIC_DB dbsize", "h1: ping -c 5 10.0.1.1", "h1: ping -c 5 10.0.2.10"]
+    "o_procs": ["leaf1: supervisorctl status orchagent portmgrd vlanmgrd neighsyncd", "leaf1: supervisorctl status bgpd zebra fpmsyncd staticd"],
+    "after_chaos": ["leaf1: supervisorctl status", "leaf1: show feature status", "leaf1: show interfaces status", "leaf1: show vlan brief", "leaf1: sonic-db-cli CONFIG_DB dbsize", "leaf1: sonic-db-cli APPL_DB dbsize", "leaf1: sonic-db-cli ASIC_DB dbsize", "h1: ping -c 5 10.0.1.1", "h1: ping -c 5 10.0.2.10"]
   },
   "chaos_ids": ["c_stop_swss", "c_vlan_churn_50", "c_stop_orchagent", "c_pause_swss", "c_stop_lldp_feature", "c_redis_rogue_key", "c_stop_syncd", "c_config_reload"],
   "enabled_chaos": ["c_stop_swss", "c_vlan_churn_50", "c_stop_lldp_feature"],

@@ -380,9 +380,11 @@ def _lesson_flow(orch: Orchestrator) -> str:
     while action == "menu":
         picked = _step_menu(orch)
         if picked == "__back__":
+            _warn_active_chaos(orch)
             action = "catalogue"
             break
         if picked is None or picked == "__quit__":
+            _warn_active_chaos(orch)
             engine.save_session_state(orch)
             console.print("Session paused. Resume with 'chaoslab lessons'.")
             action = "quit"
@@ -408,21 +410,34 @@ def _step_menu(orch: Orchestrator) -> int | str | None:
     return questionary.select(f"{orch.lesson.title} — start at", choices=choices).ask()
 
 
-def _nav(orch: Orchestrator) -> str:
-    choice = questionary.select(
-        "Next?",
-        choices=["Continue", "← Previous step", "↑ Lesson menu", "Quit"],
-        default="Continue",
-    ).ask()
-    if choice is None or choice == "Quit":
-        return "quit"
-    if choice == "← Previous step":
-        orch.step_index = max(0, orch.step_index - 1)
-        return "back"
-    if choice == "↑ Lesson menu":
-        return "menu"
-    orch.advance()
-    return "continue"
+def _warn_active_chaos(orch: Orchestrator) -> None:
+    active = orch.chaos.active
+    if active is not None:
+        console.print(
+            f"[yellow]⚠ Chaos '{active.label}' is still active — the lab is left broken.[/yellow]\n"
+            "[yellow]Heal any time with 'chaoslab reset' (full baseline re-apply, same as "
+            "lab-up), or re-enter the lesson and pick '⚕ Heal the lab now'.[/yellow]"
+        )
+
+
+def _nav(orch: Orchestrator, transcript_lines: list[str]) -> str:
+    while True:
+        choices = ["Continue", "← Previous step", "↑ Lesson menu", "Quit"]
+        if orch.chaos.active is not None:
+            choices.insert(1, "⚕ Heal the lab now")
+        choice = questionary.select("Next?", choices=choices, default="Continue").ask()
+        if choice is None or choice == "Quit":
+            return "quit"
+        if choice == "⚕ Heal the lab now":
+            _render_restore(orch, transcript_lines)
+            continue
+        if choice == "← Previous step":
+            orch.step_index = max(0, orch.step_index - 1)
+            return "back"
+        if choice == "↑ Lesson menu":
+            return "menu"
+        orch.advance()
+        return "continue"
 
 
 def _run_loop(orch: Orchestrator, transcript_lines: list[str] | None = None) -> str:
@@ -435,18 +450,19 @@ def _run_loop(orch: Orchestrator, transcript_lines: list[str] | None = None) -> 
         action = "continue"
         if step.kind == "teach":
             console.print(Panel(orch.teach_text(), title=step.id))
-            action = _nav(orch)
+            action = _nav(orch, transcript_lines)
         elif step.kind == "observe":
             _render_observe(orch, transcript_lines)
-            action = _nav(orch)
+            action = _nav(orch, transcript_lines)
         elif step.kind == "qna":
             action = _qna_loop(orch, transcript_lines)
         elif step.kind == "chaos_select":
             action = _chaos_step(orch, transcript_lines)
         elif step.kind == "restore":
             _render_restore(orch, transcript_lines)
-            action = _nav(orch)
+            action = _nav(orch, transcript_lines)
         if action == "quit":
+            _warn_active_chaos(orch)
             engine.save_session_state(orch)
             console.print("Session paused. Resume with 'chaoslab lessons'.")
             return "quit"
@@ -460,7 +476,7 @@ def _run_loop(orch: Orchestrator, transcript_lines: list[str] | None = None) -> 
 def _render_observe(orch: Orchestrator, transcript_lines: list[str]) -> None:
     result = orch.observe()
     for output in result.outputs:
-        console.print(f"[dim]$ {output.spec}[/dim]")
+        console.print(f"[bold orange1]$ {output.spec}[/bold orange1]")
         console.print("\n".join(output.raw.splitlines()[:12]) or "(no output)")
     console.print(
         Panel(
@@ -477,6 +493,7 @@ def _qna_loop(orch: Orchestrator, transcript_lines: list[str]) -> str:
             *suggestions,
             "Ask your own",
             "Run an experiment",
+            *(["⚕ Heal the lab now"] if orch.chaos.active is not None else []),
             "Continue",
             "← Previous step",
             "↑ Lesson menu",
@@ -485,6 +502,9 @@ def _qna_loop(orch: Orchestrator, transcript_lines: list[str]) -> str:
         pick = questionary.select(f"Questions ({orch.questions_left} left)", choices=choices).ask()
         if pick is None or pick == "Quit":
             return "quit"
+        if pick == "⚕ Heal the lab now":
+            _render_restore(orch, transcript_lines)
+            continue
         if pick == "← Previous step":
             orch.step_index = max(0, orch.step_index - 1)
             return "back"
@@ -575,6 +595,9 @@ def _chaos_step(orch: Orchestrator, transcript_lines: list[str]) -> str:
     except ChaosError as exc:
         console.print(f"[red]{exc}[/red]")
         return "continue"
+    console.print("[bold red]chaos injected — commands run on the lab:[/bold red]")
+    for command in outcome.inject_commands:
+        console.print(f"[bold orange1]  $ {command}[/bold orange1]")
     _render_diff(outcome.changed_facts)
     if prediction.strip():
         console.print(Panel(prediction.strip(), title="your prediction — compare against the diff"))
@@ -599,6 +622,25 @@ def _render_diff(changed: list[str]) -> None:
 
 def _render_restore(orch: Orchestrator, transcript_lines: list[str]) -> None:
     outcome = orch.restore()
+    if not outcome.chaos_id:
+        console.print(
+            Panel(
+                "Nothing to heal — no chaos is active; baseline unchanged.",
+                style="green",
+                title="restore",
+            )
+        )
+        transcript_lines.append("Restore: nothing active")
+        return
+    if outcome.restore_commands:
+        console.print("[bold green]restore commands run on the lab:[/bold green]")
+        for command in outcome.restore_commands:
+            console.print(f"[bold orange1]  $ {command}[/bold orange1]")
+    if outcome.escalated:
+        console.print(
+            "[yellow]Authored restore wasn't enough — escalated (dataplane un-wedge, "
+            "then full baseline re-apply if needed — the same path lab-up/reset use).[/yellow]"
+        )
     timing = f" (recovered in {outcome.recovery_seconds:g} s)" if outcome.chaos_id else ""
     if outcome.healed:
         console.print(

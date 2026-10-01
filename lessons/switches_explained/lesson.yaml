@@ -100,6 +100,10 @@ steps:
   kind: qna
   title: 'S8: Questions — the L2/L3 boundary'
   optional: true
+- id: q_baseline
+  kind: qna
+  title: Questions — interrogate the healthy baseline
+  optional: false
 - id: chaos
   kind: chaos_select
   title: Pick one failure to inject (8 options)
@@ -118,8 +122,7 @@ commands:
   after_chaos:
   - 'leaf1: show interfaces status'
   - 'leaf1: show vlan brief'
-  - 'leaf1: show mac'
-  - 'leaf1: show mac -c'
+  - 'leaf1: bridge fdb show br Bridge'
   - 'leaf1: show lldp table'
   - 'leaf1: show ip interfaces'
   - 'h1: ping -c 5 10.0.1.1'
@@ -136,20 +139,23 @@ commands:
     - 'leaf1: show vlan config'
     o_mac:
     - 'leaf1: sonic-clear fdb all'
-    - 'leaf1: show mac'
-    - 'leaf1: show mac -c'
+    - 'leaf1: bridge fdb flush dev Bridge dynamic'
+    - 'leaf1: bridge fdb show br Bridge'
     - 'h1: ping -c 3 10.0.1.1'
+    - 'leaf1: bridge fdb show br Bridge'
     - 'leaf1: show mac'
-    - 'leaf1: show mac -c'
     o_age:
     - 'leaf1: show mac aging-time'
-    - 'leaf1: show mac -c'
+    - 'leaf1: ip -d link show Bridge'
+    - 'h1: ping -c 3 10.0.1.1'
+    - 'leaf1: bridge fdb show br Bridge'
     o_redis:
     - 'h1: ping -c 3 10.0.1.1'
     - 'leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_FDB_ENTRY*"'
     - 'leaf1: sonic-db-cli APPL_DB keys "FDB_TABLE*"'
     - 'leaf1: sonic-db-cli APPL_DB keys "LLDP_ENTRY_TABLE*"'
     - 'leaf1: sonic-db-cli APPL_DB hgetall "LLDP_ENTRY_TABLE:Ethernet0"'
+    - 'leaf1: bridge fdb show br Bridge'
     o_counters:
     - 'leaf1: sonic-clear counters'
     - 'h1: ping -c 10 10.0.1.1'
@@ -157,7 +163,7 @@ commands:
     o_boundary:
     - 'h1: ping -c 3 10.0.2.10'
     - 'h1: ip neigh show'
-    - 'leaf1: show mac'
+    - 'leaf1: bridge fdb show br Bridge'
     - 'leaf1: show arp'
   vocabulary:
   - show interfaces status*
@@ -165,6 +171,8 @@ commands:
   - show interfaces counters*
   - show interfaces switchport*
   - show mac*
+  - bridge fdb*
+  - ip -d link show*
   - show vlan*
   - show lldp*
   - show arp*
@@ -186,7 +194,7 @@ commands:
   - config vlan*
   - config interface ip*
   - config feature state lldp*
-  - docker ps*
+  - supervisorctl status*
 chaos_options:
 - id: c_shut_access
   label: 'Unplug the host: shut h1''s access port'
@@ -196,6 +204,7 @@ chaos_options:
   restore:
   - 'leaf1: sudo config interface startup Ethernet8'
   - 'h1: ping -c 3 10.0.1.1'
+  - 'h2: ping -c 2 10.0.1.1'
   expected_effects:
   - 'Ethernet8 flips to Admin down and Oper down within a second or two. h1→gateway ping goes to 100% loss immediately. h1''s FDB entry disappears (flush on port-down) `[VERIFY-ON-LAB: whether vs flushes immediately or entry lingers until aging]`. VLAN membership, LLDP entries on Ethernet0/4, and inter-switch state are untouched. After restore: link returns Oper up within seconds; first ping re-ARPs and re-learns; loss ends immediately after link-up.'
   risk: low
@@ -206,9 +215,11 @@ chaos_options:
   type: config
   inject:
   - 'leaf1: sonic-clear fdb all'
+  - 'leaf1: bridge fdb flush dev Bridge dynamic'
   restore:
   - 'h1: ping -c 3 10.0.1.1'
-  - 'leaf1: show mac -c'
+  - 'h2: ping -c 2 10.0.1.1'
+  - 'leaf1: bridge fdb show br Bridge'
   expected_effects:
   - 'MAC entry count drops to zero (or near zero) instantly. User traffic is barely dented: the next frame to an unknown MAC floods, the reply relearns, so expect zero or at most one lost ping `[VERIFY-ON-LAB: first-ping loss after flush]`. This is the "failure" that isn''t one — it teaches that the FDB is a disposable cache.'
   risk: low
@@ -267,7 +278,7 @@ chaos_options:
   expected_effects:
   - 'Zero data-plane impact — both pings keep working at 0% loss the whole time (the proof that discovery ≠ forwarding). leaf1''s lldp container stops (visible via `docker ps` / `show feature status`); leaf1''s own neighbor table empties immediately or shortly after container stop `[VERIFY-ON-LAB: local table behavior on stop]`. The interesting slow burn happens on the *peer*: leaf2 keeps showing leaf1 as a neighbor until the TTL runs out (~120 s) — silence is detected on a delay `[VERIFY-ON-LAB: exact ageout timing on vs]`. After restore, entries reappear within one announcement interval (~30 s).'
   risk: low
-  enabled: true
+  enabled: false
   plan_b: '`leaf1: sudo systemctl stop lldp` / `sudo systemctl start lldp` (service-level instead of feature-level — same effect, different management surface).'
 - id: c_mac_flap
   label: 'Identity crisis: h1 keeps changing its MAC'
@@ -411,6 +422,10 @@ qna:
     - The ping to h3 worked — so why is h3's MAC absent from leaf1's table?
     - What exactly did h1 put in the destination-MAC field of those frames, and how did it know it?
     - Where does the switch's L2 job end and something else take over, physically and logically?
+    q_baseline:
+    - What is the difference between the Admin and Oper columns?
+    - Why can a port be Admin up but Oper down — what are the possible causes?
+    - Which ports on leaf1 go to leaf2 and which go to h1, and how would I check without a diagram?
     q_impact:
     - What changed after the injection — which ports, MAC entries, or pings?
     - Why did reachability break or survive the way it did?

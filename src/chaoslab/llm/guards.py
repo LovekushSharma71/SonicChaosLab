@@ -124,12 +124,30 @@ def check_scripted(text: str, fact_values: list[str]) -> tuple[bool, str]:
     return True, ""
 
 
-def tiered_fallback(card: Card, mode: str, chaos_id: str | None = None) -> str:
-    """A labelled fallback drawn from the best-matching card field when the model is unavailable."""
+def tiered_fallback(
+    card: Card, mode: str, chaos_id: str | None = None, focus_commands: list[str] | None = None
+) -> str:
+    """A labelled fallback drawn from the best-matching card field when the model is unavailable.
+
+    With focus_commands, healthy-state bullets are filtered to those sharing a term with the
+    step's commands, so each observe step gets its relevant notes instead of the whole card.
+    """
     if mode == "explain_impact" and chaos_id and chaos_id in card.expected_chaos_effects:
         body = card.expected_chaos_effects[chaos_id]
     elif mode in ("explain_baseline", "experiment"):
         body = card.healthy_state_expectations
+        if focus_commands:
+            stop = {"show", "sonic", "keys", "dev", "link", "the", "and", "for", "all"}
+            terms = {
+                term
+                for command in focus_commands
+                for term in re.findall(r"[a-z_]{3,}", command.lower().split(":", 1)[-1])
+                if term not in stop
+            }
+            lines = [line for line in body.splitlines() if line.strip()]
+            picked = [line for line in lines if any(term in line.lower() for term in terms)]
+            if picked:
+                body = "\n".join(picked)
     else:
         body = card.objective
     return FALLBACK_PREFIX + body

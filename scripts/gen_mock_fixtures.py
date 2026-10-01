@@ -184,6 +184,18 @@ DEFAULTS: dict[str, str] = {
         "10.0.12.1",
         "65002",
     ),
+    # vtysh-wrapped variants: the vs image's `show bgp` click group is broken, so lessons
+    # author the vtysh form; plain-`show` keys above are kept for parser tests.
+    'leaf1: vtysh -c "show bgp summary"': bgp_summary(
+        [("10.0.12.1", "65002", "00:10:23", "1"), ("10.0.12.3", "65002", "00:10:23", "1")],
+        "10.0.12.0",
+        "65001",
+    ),
+    'leaf2: vtysh -c "show bgp summary"': bgp_summary(
+        [("10.0.12.0", "65001", "00:10:23", "1"), ("10.0.12.2", "65001", "00:10:23", "1")],
+        "10.0.12.1",
+        "65002",
+    ),
     "leaf1: show bgp neighbors 10.0.12.1": (
         "BGP neighbor is 10.0.12.1, remote AS 65002, local AS 65001, external link\n"
         "  BGP state = Established, up for 00:10:23\n"
@@ -202,6 +214,26 @@ DEFAULTS: dict[str, str] = {
         "   Network          Next Hop\n*> 10.0.2.0/24      10.0.12.1\nTotal number of prefixes 1\n"
     ),
     "leaf1: show bgp neighbors 10.0.12.3 received-routes": (
+        "   Network          Next Hop\n*> 10.0.2.0/24      10.0.12.3\nTotal number of prefixes 1\n"
+    ),
+    'leaf1: vtysh -c "show bgp neighbors 10.0.12.1"': (
+        "BGP neighbor is 10.0.12.1, remote AS 65002, local AS 65001, external link\n"
+        "  BGP state = Established, up for 00:10:23\n"
+        "  Last read 00:00:01, Last write 00:00:01\n"
+        "  Hold time is 10, keepalive interval is 3 seconds\n"
+        "  Message statistics:\n"
+        "    Opens:          1          1\n"
+        "    Notifications:  0          0\n"
+        "    Updates:        3          2\n"
+        "    Keepalives:   205        205\n"
+    ),
+    'leaf1: vtysh -c "show bgp neighbors 10.0.12.1 advertised-routes"': (
+        "   Network          Next Hop\n*> 10.0.1.0/24      0.0.0.0\nTotal number of prefixes 1\n"
+    ),
+    'leaf1: vtysh -c "show bgp neighbors 10.0.12.1 received-routes"': (
+        "   Network          Next Hop\n*> 10.0.2.0/24      10.0.12.1\nTotal number of prefixes 1\n"
+    ),
+    'leaf1: vtysh -c "show bgp neighbors 10.0.12.3 received-routes"': (
         "   Network          Next Hop\n*> 10.0.2.0/24      10.0.12.3\nTotal number of prefixes 1\n"
     ),
     "leaf1: show ip route": full_route_table(),
@@ -243,8 +275,43 @@ DEFAULTS: dict[str, str] = {
         "zebra      RUNNING   pid 41, uptime 0:20:00\n"
         "fpmsyncd   RUNNING   pid 42, uptime 0:20:00\n"
     ),
+    # vs has no nested docker: one supervisord owns every process group.
+    "leaf1: supervisorctl status": (
+        "orchagent    RUNNING   pid 30, uptime 0:20:00\n"
+        "portmgrd     RUNNING   pid 31, uptime 0:20:00\n"
+        "vlanmgrd     RUNNING   pid 32, uptime 0:20:00\n"
+        "neighsyncd   RUNNING   pid 33, uptime 0:20:00\n"
+        "bgpd         RUNNING   pid 40, uptime 0:20:00\n"
+        "zebra        RUNNING   pid 41, uptime 0:20:00\n"
+        "fpmsyncd     RUNNING   pid 42, uptime 0:20:00\n"
+        "syncd        RUNNING   pid 50, uptime 0:20:00\n"
+        "lldpd        RUNNING   pid 60, uptime 0:20:00\n"
+    ),
+    "leaf1: supervisorctl status orchagent portmgrd vlanmgrd neighsyncd": (
+        "orchagent    RUNNING   pid 30, uptime 0:20:00\n"
+        "portmgrd     RUNNING   pid 31, uptime 0:20:00\n"
+        "vlanmgrd     RUNNING   pid 32, uptime 0:20:00\n"
+        "neighsyncd   RUNNING   pid 33, uptime 0:20:00\n"
+    ),
+    "leaf1: supervisorctl status bgpd zebra fpmsyncd staticd": (
+        "bgpd       RUNNING   pid 40, uptime 0:20:00\n"
+        "zebra      RUNNING   pid 41, uptime 0:20:00\n"
+        "fpmsyncd   RUNNING   pid 42, uptime 0:20:00\n"
+        "staticd    RUNNING   pid 43, uptime 0:20:00\n"
+    ),
     "leaf1: sonic-clear counters": "Cleared counters\n",
     "leaf1: sonic-clear fdb all": "FDB entries are cleared.\n",
+    "leaf1: bridge fdb flush dev Bridge": "",
+    "leaf1: bridge fdb flush dev Bridge dynamic": "",
+    "leaf1: bridge fdb show br Bridge": (
+        "02:00:00:00:01:10 dev Ethernet8 vlan 10 master Bridge \n"
+        "02:00:00:00:01:11 dev Ethernet12 vlan 10 master Bridge \n"
+        "02:42:ac:14:14:03 dev Bridge vlan 10 master Bridge permanent\n"
+    ),
+    "leaf1: ip -d link show Bridge": (
+        "35: Bridge: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9100 state UP\n"
+        "    bridge forward_delay 1500 hello_time 200 max_age 2000 ageing_time 30000\n"
+    ),
     # --- redis reads ---
     'leaf1: sonic-db-cli CONFIG_DB keys "PORT|*"': keys(
         "PORT|Ethernet0", "PORT|Ethernet4", "PORT|Ethernet8"
@@ -333,9 +400,30 @@ OVERRIDES: dict[str, dict[str, str]] = {
         "leaf1: show interfaces status": iface_rows(SHUT8_IFACES),
         "leaf1: show mac": "  No.    Vlan    MacAddress    Port    Type\nTotal number of entries 0\n",
         "leaf1: show mac -c": "Total number of entries 0\n",
+        "leaf1: bridge fdb show br Bridge": (
+            "02:42:ac:14:14:03 dev Bridge vlan 10 master Bridge permanent\n"
+        ),
         "h1: ping -c 5 10.0.1.1": ping("10.0.1.1", 5, loss=100.0),
         "h1: ping -c 5 10.0.2.10": ping("10.0.2.10", 5, loss=100.0),
         'leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_FDB_ENTRY*"': "\n",
+    },
+    "c_clear_fdb": {
+        "leaf1: bridge fdb show br Bridge": (
+            "02:42:ac:14:14:03 dev Bridge vlan 10 master Bridge permanent\n"
+        ),
+    },
+    "c_stop_swss": {
+        "leaf1: supervisorctl status": (
+            "orchagent    STOPPED   Sep 30 10:00 AM\n"
+            "portmgrd     RUNNING   pid 31, uptime 0:20:00\n"
+            "vlanmgrd     RUNNING   pid 32, uptime 0:20:00\n"
+            "neighsyncd   RUNNING   pid 33, uptime 0:20:00\n"
+            "bgpd         RUNNING   pid 40, uptime 0:20:00\n"
+            "zebra        RUNNING   pid 41, uptime 0:20:00\n"
+            "fpmsyncd     RUNNING   pid 42, uptime 0:20:00\n"
+            "syncd        RUNNING   pid 50, uptime 0:20:00\n"
+            "lldpd        RUNNING   pid 60, uptime 0:20:00\n"
+        ),
     },
     "c_vlan_churn_50": {
         "leaf1: sonic-db-cli CONFIG_DB dbsize": "1284\n",
@@ -357,6 +445,11 @@ OVERRIDES: dict[str, dict[str, str]] = {
             "10.0.12.0",
             "65001",
         ),
+        'leaf1: vtysh -c "show bgp summary"': bgp_summary(
+            [("10.0.12.1", "65002", "00:00:12", "Active"), ("10.0.12.3", "65002", "00:09:50", "1")],
+            "10.0.12.0",
+            "65001",
+        ),
         "leaf1: show ip route 10.0.2.0/24": route_1nh(),
         "leaf1: show interfaces status": iface_rows(
             [
@@ -366,6 +459,11 @@ OVERRIDES: dict[str, dict[str, str]] = {
             ]
         ),
         "leaf2: show bgp summary": bgp_summary(
+            [("10.0.12.0", "65001", "00:00:12", "Active"), ("10.0.12.2", "65001", "00:09:50", "1")],
+            "10.0.12.1",
+            "65002",
+        ),
+        'leaf2: vtysh -c "show bgp summary"': bgp_summary(
             [("10.0.12.0", "65001", "00:00:12", "Active"), ("10.0.12.2", "65001", "00:09:50", "1")],
             "10.0.12.1",
             "65002",

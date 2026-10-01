@@ -1,0 +1,9 @@
+BGP neighbor is 10.0.12.1, remote AS 65002, local AS 65001, external link
+  BGP state = Established, up for 00:10:23
+  Last read 00:00:01, Last write 00:00:01
+  Hold time is 10, keepalive interval is 3 seconds
+  Message statistics:
+    Opens:          1          1
+    Notifications:  0          0
+    Updates:        3          2
+    Keepalives:   205        205

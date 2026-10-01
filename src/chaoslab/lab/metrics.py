@@ -170,6 +170,39 @@ def parse_mac_table(text: str) -> tuple[list[MacEntry], int | None]:
     return entries, count
 
 
+def parse_bridge_fdb(text: str) -> tuple[list[MacEntry], int]:
+    """Parse `bridge fdb show br <bridge>` learned rows (permanent/self rows skipped).
+
+    On docker-sonic-vs the kernel bridge is the data plane and the only place MAC learning
+    is observable — `show mac` renders an ASIC_DB view that never populates there.
+    """
+    entries: list[MacEntry] = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or "permanent" in parts or "self" in parts:
+            continue
+        if not re.match(r"^[0-9a-fA-F:]{17}$", parts[0]) or parts[1] != "dev":
+            continue
+        if parts[0].lower().startswith("aa:c1:ab"):
+            continue  # containerlab's generated veth prefix — transient infra rows, not stations
+        vlan = parts[parts.index("vlan") + 1] if "vlan" in parts else "-"
+        entries.append(
+            MacEntry(vlan=vlan, mac=parts[0].lower(), port=parts[2], type="Dynamic")
+        )
+    return entries, len(entries)
+
+
+def parse_supervisorctl(text: str) -> dict[str, str]:
+    """Parse `supervisorctl status [...]` into {process: state}; pid/uptime deliberately
+    dropped so snapshots don't diff on time alone."""
+    procs: dict[str, str] = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].isupper() and parts[1].isalpha():
+            procs[parts[0]] = parts[1]
+    return procs
+
+
 def parse_lldp_table(text: str) -> list[LldpNeighbor]:
     rows: list[LldpNeighbor] = []
     for line in text.splitlines():
@@ -218,6 +251,18 @@ def _redis_value(command: str, text: str) -> str:
     return str(len(lines))
 
 
+def _unwrap_vtysh(command: str) -> str:
+    """Map `vtysh -c "show bgp ..."` to its inner command so parser dispatch matches.
+
+    Lessons author the vtysh form because the vs image's `show bgp` click group is broken;
+    the output format is identical either way (SONiC's show shells vtysh on real devices).
+    """
+    stripped = command.strip()
+    if stripped.startswith("vtysh -c"):
+        return stripped[len("vtysh -c") :].strip().strip("'\"")
+    return stripped
+
+
 def collect_snapshot(results: list[CommandResult]) -> Snapshot:
     """Parse every recognised command output into a comparable snapshot.
 
@@ -226,7 +271,7 @@ def collect_snapshot(results: list[CommandResult]) -> Snapshot:
     """
     snapshot = Snapshot()
     for result in results:
-        command = result.command
+        command = _unwrap_vtysh(result.command)
         node = result.target
         if command.startswith("show interfaces status"):
             for iface in parse_interface_status(result.raw):
@@ -254,13 +299,19 @@ def collect_snapshot(results: list[CommandResult]) -> Snapshot:
             ping = parse_ping(command, result.raw)
             key = f"{node}:ping:{ping.dest}:s{ping.size}:{'df' if ping.df else 'nodf'}"
             snapshot.values[key] = f"{ping.loss_pct:g}% loss"
-        elif command == "show mac" or command.startswith("show mac -c"):
-            entries, count = parse_mac_table(result.raw)
-            if count is not None:
-                snapshot.values[f"{node}:mac_count"] = str(count)
+        elif command.startswith("bridge fdb show"):
+            entries, count = parse_bridge_fdb(result.raw)
+            snapshot.values[f"{node}:mac_count"] = str(count)
             for entry in entries:
                 snapshot.values[f"{node}:mac:{entry.mac}:port"] = entry.port
                 snapshot.values[f"{node}:mac:{entry.mac}:vlan"] = entry.vlan
+        elif command.startswith("supervisorctl status"):
+            for name, state in parse_supervisorctl(result.raw).items():
+                snapshot.values[f"{node}:proc:{name}"] = state
+        elif command == "show mac" or command.startswith("show mac -c"):
+            # Display-only on vs: the CLI FDB view never populates there, so it must not
+            # overwrite the kernel-bridge facts with zeros.
+            pass
         elif command.startswith("show lldp table"):
             neighbors = parse_lldp_table(result.raw)
             snapshot.values[f"{node}:lldp_count"] = str(len(neighbors))

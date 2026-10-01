@@ -2,9 +2,10 @@
 """The lesson orchestrator: a deterministic state machine over a lesson's steps.
 
 It owns all business logic (CLI and API are thin clients): the step cursor, the question budget
-(11/lesson, 3 in demo mode), the per-step redirect allowance (2), step-scoped memory flushing,
-chaos injection via the engine, and the four LLM touchpoints (baseline/impact explanations, Q&A,
-and experiment explanations). The model never counts, gates, or decides flow (PRODUCT.md §4).
+(11/lesson, 3 in demo mode), the per-step redirect allowance (2), lesson-scoped chat memory
+(last 3 Q&A persist across steps, flushed between lessons), chaos injection via the engine, and
+the four LLM touchpoints (baseline/impact explanations, Q&A, and experiment explanations). The
+model never counts, gates, or decides flow (PRODUCT.md §4).
 """
 
 from __future__ import annotations
@@ -43,6 +44,27 @@ from .models import (
 )
 
 _TARGET_PREFIX = re.compile(r"^(leaf1|leaf2|h1|h2|h3|h4):")
+
+
+def _ping_residual(snapshot: Snapshot) -> list[str]:
+    """Ping facts that are not clean (non-zero loss) — health check for escalated heals."""
+    return [
+        f"{key}: {value}"
+        for key, value in sorted(snapshot.values.items())
+        if ":ping:" in key and not value.startswith("0%")
+    ]
+
+
+def _true_residual(before: Snapshot | None, verify: Snapshot) -> list[str]:
+    """Diff vs before, minus pings that landed clean — a degraded 'before' (cold ARP,
+    wedged vs pump) must not count 0% loss as residue and force escalation."""
+    if before is None:
+        return []
+    return [
+        change
+        for change in diff_snapshots(before, verify)
+        if not (":ping:" in change and change.endswith("→ 0% loss"))
+    ]
 # Experiment gates are code-disabled until the real-LLM milestone (user decision 2026-09-30);
 # guards.py keeps the implementations unit-tested for the re-enable.
 _GATES_ENABLED = False
@@ -51,8 +73,8 @@ _NOT_IMPLEMENTED = (
     "try: settings set provider anthropic)"
 )
 _PROPOSAL_MAP = [
-    ("bgp", "leaf1: show bgp summary"),
-    ("neighbor", "leaf1: show bgp summary"),
+    ("bgp", 'leaf1: vtysh -c "show bgp summary"'),
+    ("neighbor", 'leaf1: vtysh -c "show bgp summary"'),
     ("route", "leaf1: show ip route"),
     ("ecmp", "leaf1: show ip route 10.0.2.0/24"),
     ("mac", "leaf1: show mac"),
@@ -62,7 +84,7 @@ _PROPOSAL_MAP = [
     ("port", "leaf1: show interfaces status"),
     ("mtu", "leaf1: show interfaces status"),
     ("feature", "leaf1: show feature status"),
-    ("container", "leaf1: docker ps"),
+    ("container", "leaf1: supervisorctl status"),
 ]
 
 
@@ -136,8 +158,8 @@ class Orchestrator:
         )
 
     def advance(self) -> SessionStatus:
-        """Move to the next step, flushing step-scoped memory and resetting redirects."""
-        self.memory.flush_step()
+        """Move to the next step, resetting redirects. Chat memory (last 3 Q&A) persists across
+        steps within the lesson; it is flushed between lessons by building a fresh orchestrator."""
         self.redirects_used = 0
         if self.step_index < len(self.lesson.steps) - 1:
             self.step_index += 1
@@ -174,7 +196,9 @@ class Orchestrator:
         if canned is not None:
             explanation, fallback = canned, False
         else:
-            explanation, fallback = self._scripted_explain(state_lines, "explain_baseline")
+            explanation, fallback = self._scripted_explain(
+                state_lines, "explain_baseline", focus_commands=commands
+            )
         self.last_explanation = explanation
         self.last_fallback = fallback
         return ObserveResult(
@@ -192,6 +216,7 @@ class Orchestrator:
         mode: str,
         chaos_id: str | None = None,
         chaos_effect: str | None = None,
+        focus_commands: list[str] | None = None,
     ) -> tuple[str, bool]:
         if self.settings.provider == "fake":
             return _NOT_IMPLEMENTED, False
@@ -201,10 +226,10 @@ class Orchestrator:
         try:
             text = safe_generate(request, self.settings)
         except FallbackExhausted:
-            return tiered_fallback(self.card, mode, chaos_id), True
+            return tiered_fallback(self.card, mode, chaos_id, focus_commands), True
         ok, _ = check_scripted(text, state_lines)
         if not ok:
-            return tiered_fallback(self.card, mode, chaos_id), True
+            return tiered_fallback(self.card, mode, chaos_id, focus_commands), True
         return text, False
 
     # -------------------------------------------------------------------- qna
@@ -267,7 +292,11 @@ class Orchestrator:
         self.questions_used += 1
         self.memory.add(text, accumulated)
         ok, reason = check_scripted(accumulated, [])
-        verdict = "validated" if ok else f"unverified: {reason}"
+        verdict = (
+            "validated"
+            if ok
+            else f"unverified ({reason}) — treat with suspicion and cross-check the facts above"
+        )
         if fallback:
             verdict = "from lesson notes (model unavailable)"
         yield StreamEvent(
@@ -321,6 +350,12 @@ class Orchestrator:
         option = self.loaded.chaos_by_id(option_id)
         if option is None:
             raise KeyError(f"unknown chaos option: {option_id}")
+        if self.settings.lab_mode != "mock":
+            # Heal-then-warm: a wedged vs pump or cold ARP/FDB must not contaminate the
+            # baseline snapshot (a degraded 'before' fakes residuals after restore).
+            from ..lab.topology import verify_dataplane
+
+            verify_dataplane(self.adapter)
         before = collect_snapshot(self.adapter.run_many(self.lesson.commands.after_chaos))
         self.chaos.inject(option)
         after = collect_snapshot(self.adapter.run_many(self.lesson.commands.after_chaos))
@@ -356,15 +391,52 @@ class Orchestrator:
         started = time.monotonic()
         self.chaos.restore(active)
         verify = collect_snapshot(self.adapter.run_many(self.lesson.commands.after_chaos))
-        residual = diff_snapshots(self.before_snapshot, verify) if self.before_snapshot else []
+        residual = _true_residual(self.before_snapshot, verify)
         # Measured reconvergence: on a live lab, poll until the baseline facts return.
         if residual and self.lesson.observe.measure_recovery and self.settings.lab_mode != "mock":
             deadline = time.monotonic() + 30
             while residual and time.monotonic() < deadline:
                 time.sleep(2)
                 verify = collect_snapshot(self.adapter.run_many(self.lesson.commands.after_chaos))
-                residual = diff_snapshots(self.before_snapshot, verify)
+                residual = _true_residual(self.before_snapshot, verify)
         recovery_seconds = round(time.monotonic() - started, 2)
+        escalated = False
+        if self.settings.lab_mode != "mock" and _ping_residual(verify):
+            # A contaminated 'before' snapshot (lab broken pre-chaos) makes 100%→100%
+            # diff as "no change" — dirty pings must force escalation regardless.
+            residual = residual + [
+                r for r in _ping_residual(verify) if r not in residual
+            ]
+        if residual and self.settings.lab_mode != "mock":
+            # §7 invariant: restore must land back at the lab-up baseline. Escalate in
+            # tiers: cheap dataplane un-wedge first (a sonic-vs port flap wedges syncd's
+            # tap→veth pump one-way; only a veth bounce re-arms it), then the full
+            # shared apply_baseline primitive.
+            from ..lab.topology import apply_baseline, verify_dataplane
+
+            escalated = True
+            verify_dataplane(self.adapter)
+            verify = collect_snapshot(self.adapter.run_many(self.lesson.commands.after_chaos))
+            residual = _true_residual(self.before_snapshot, verify)
+            if residual:
+                apply_baseline(self.adapter)
+                # apply_baseline asserts config consumed + BGP Established. The canonical
+                # baseline is now the reference — the session's 'before' snapshot may
+                # itself have captured a degraded lab. config-load churn re-wedges vs
+                # pumps and re-arms can land late, so keep re-bouncing dead paths until
+                # every lesson ping probe is clean.
+                deadline = time.monotonic() + 180
+                while True:
+                    verify = collect_snapshot(
+                        self.adapter.run_many(self.lesson.commands.after_chaos)
+                    )
+                    residual = _ping_residual(verify)
+                    if not residual or time.monotonic() > deadline:
+                        break
+                    verify_dataplane(self.adapter)
+                if not residual:
+                    self.before_snapshot = verify
+            recovery_seconds = round(time.monotonic() - started, 2)
         self.last_state_lines = _snapshot_lines(verify)
         return RestoreOutcome(
             chaos_id=active.id,
@@ -372,6 +444,7 @@ class Orchestrator:
             residual_changes=residual,
             healed=not residual,
             recovery_seconds=recovery_seconds,
+            escalated=escalated,
         )
 
     def reset_lab(self) -> None:

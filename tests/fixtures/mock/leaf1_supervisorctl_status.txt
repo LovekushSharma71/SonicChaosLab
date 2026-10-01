@@ -1,0 +1,9 @@
+orchagent    RUNNING   pid 30, uptime 0:20:00
+portmgrd     RUNNING   pid 31, uptime 0:20:00
+vlanmgrd     RUNNING   pid 32, uptime 0:20:00
+neighsyncd   RUNNING   pid 33, uptime 0:20:00
+bgpd         RUNNING   pid 40, uptime 0:20:00
+zebra        RUNNING   pid 41, uptime 0:20:00
+fpmsyncd     RUNNING   pid 42, uptime 0:20:00
+syncd        RUNNING   pid 50, uptime 0:20:00
+lldpd        RUNNING   pid 60, uptime 0:20:00

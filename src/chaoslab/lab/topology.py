@@ -20,6 +20,7 @@ from .adapter import DeviceAdapter, DockerAdapter
 CLAB = "containerlab"
 LAB_NAME = "chaoslab"
 LEAVES = ("leaf1", "leaf2")
+HOSTS = ("h1", "h2", "h3", "h4")
 LESSON_PORTS = ("Ethernet0", "Ethernet4", "Ethernet8", "Ethernet12")
 BASELINE_DB = "/etc/sonic/baseline_config_db.json"
 BASELINE_FRR = "/etc/sonic/frr_baseline.conf"
@@ -27,12 +28,13 @@ _READY_TIMEOUT_S = 420  # first boot to a working SONiC CLI takes ~4 min on a vC
 _POLL_INTERVAL_S = 5
 
 # The image ships no sudo but lessons author `sudo config ...` verbatim (true on real switches);
-# docker exec is already root, so a pass-through shim keeps lesson commands working. `sudo docker`
-# is swallowed silently: SONiC's show CLI shells it internally and the image has no nested docker,
-# which otherwise appends "exec: docker: not found" noise to every command's output.
+# docker exec is already root, so a pass-through shim keeps lesson commands working. Two mappings:
+# `sudo docker` is swallowed (show CLI shells it; no nested docker) and `sudo rvtysh` execs vtysh
+# (sonic-utilities' restricted vtysh wrapper is absent on vs — it breaks `show ip route`).
 _SUDO_SHIM = (
-    "if ! [ -x /usr/local/bin/sudo ] || ! grep -q docker /usr/local/bin/sudo; then "
-    'printf \'#!/bin/sh\\n[ "$1" = docker ] && exit 0\\nexec "$@"\\n\' >/usr/local/bin/sudo '
+    "if ! [ -x /usr/local/bin/sudo ] || ! grep -q rvtysh /usr/local/bin/sudo; then "
+    'printf \'#!/bin/sh\\n[ "$1" = docker ] && exit 0\\n'
+    '[ "$1" = rvtysh ] && { shift; exec vtysh "$@"; }\\nexec "$@"\\n\' >/usr/local/bin/sudo '
     "&& chmod 755 /usr/local/bin/sudo; fi"
 )
 
@@ -300,6 +302,16 @@ def apply_baseline(adapter: DeviceAdapter) -> bool:
     for node in LEAVES:
         steps: list[tuple[str, int, bool]] = [
             (f"{node}: {_SUDO_SHIM}", 30, True),
+            # Default arp_ignore=0 lets the raw clab veths (ethN) answer ARP for the SVI
+            # and uplink IPs with their own MAC, poisoning peer caches so traffic bypasses
+            # the tap dataplane and flaps between paths. arp_ignore=1 keeps replies on the
+            # interface that owns the address.
+            (
+                f"{node}: sysctl -w net.ipv4.conf.all.arp_ignore=1 "
+                "net.ipv4.conf.default.arp_ignore=1",
+                30,
+                False,
+            ),
             (f"{node}: {trim_logs}", 30, False),
             (f"{node}: {trim_script}", 30, False),
             (f"{node}: {trim_daemon}", 30, False),
@@ -317,24 +329,102 @@ def apply_baseline(adapter: DeviceAdapter) -> bool:
             print(f"{node}: baseline never reflected in APPL_DB — check the lab")
         print(f"{node}: baseline {'applied' if steps_ok and converged else 'INCOMPLETE'}")
         steps_ok = steps_ok and converged
+    for host in HOSTS:
+        adapter.run(f"{host}: ip neigh flush dev eth1")  # drop pre-arp_ignore poisoned entries
+    dataplane_ok = verify_dataplane(adapter)
     if steps_ok and not _wait_bgp_established(adapter):
         print("note: BGP sessions not Established yet (connect-retry can take ~2 min)")
-    return steps_ok
+    if not dataplane_ok:
+        # config-load churn wedges vs pumps and re-arms can land late — recheck after
+        # the BGP wait gave the port stack time to settle.
+        dataplane_ok = verify_dataplane(adapter)
+    return steps_ok and dataplane_ok
 
 
 _ASSERT_ROUNDS = 30
 _ASSERT_INTERVAL_S = 8
 
 
+# Adjacency probes and the raw veths to bounce when one is dead. Two verified vs
+# failure modes: (1) orchagent HOSTIF churn (repeated config loads / syncd restarts)
+# kills the tap↔veth pumps permanently — only a redeploy fixes that; (2) transient
+# pump stalls after admin flaps — a veth bounce re-arms those. arp_ignore=1 (baseline)
+# removes the ARP-race masking that used to make these look intermittent.
+_DATAPLANE_CHECKS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ("h1: ping -c 2 -W 1 10.0.1.1", (("leaf1", "eth3"),)),
+    ("h2: ping -c 2 -W 1 10.0.1.1", (("leaf1", "eth4"),)),
+    ("h3: ping -c 2 -W 1 10.0.2.1", (("leaf2", "eth3"),)),
+    ("h4: ping -c 2 -W 1 10.0.2.1", (("leaf2", "eth4"),)),
+    ("leaf1: ping -c 2 -W 1 10.0.12.1", (("leaf1", "eth1"), ("leaf2", "eth1"))),
+    ("leaf1: ping -c 2 -W 1 10.0.12.3", (("leaf1", "eth2"), ("leaf2", "eth2"))),
+)
+
+
+def _ping_ok(adapter: DeviceAdapter, spec: str) -> bool:
+    result = adapter.run(spec, timeout=30)
+    return result.ok and " 0% packet loss" in result.raw
+
+
+# `bridge fdb flush dev Bridge` (no qualifier) deletes the bridge's own *local* entry —
+# the row that delivers gateway-addressed frames up to the SVI — silently blackholing
+# every host→gateway path while learning still works. Verified on-lab; re-adding the
+# entry heals instantly. Idempotent re-assert for every Vlan SVI on the leaf.
+_LOCAL_FDB_FIX = (
+    "sh -c 'mac=$(cat /sys/class/net/Bridge/address); "
+    "for v in /sys/class/net/Vlan*; do vid=${v##*/Vlan}; "
+    'bridge fdb replace "$mac" dev Bridge self local vlan "$vid"; done 2>/dev/null; true\''
+)
+
+
+def verify_dataplane(adapter: DeviceAdapter) -> bool:
+    """Ping every adjacency; bounce the raw veth under any dead path (see _DATAPLANE_CHECKS).
+
+    Bounces are conditional — an uplink veth bounce drops the BGP session, so only dead
+    paths are touched and the caller's BGP wait covers reconvergence. The pump re-arm can
+    take well over 10 s when the port stack was just churned, so bounce+probe is retried.
+    """
+    for node in LEAVES:
+        adapter.run(f"{node}: {_LOCAL_FDB_FIX}")
+    healthy = True
+    for probe, veths in _DATAPLANE_CHECKS:
+        if _ping_ok(adapter, probe):
+            continue
+        healed = False
+        for _attempt in range(3):
+            for node, veth in veths:
+                adapter.run(
+                    f"{node}: sh -c 'ip link set {veth} down; sleep 1; ip link set {veth} up'",
+                    timeout=30,
+                )
+            deadline = time.monotonic() + 15
+            while not healed and time.monotonic() < deadline:
+                time.sleep(4)
+                healed = _ping_ok(adapter, probe)
+            if healed:
+                break
+        if healed:
+            print(f"lab health: path ok after virtual-cable bounce — {probe}")
+        else:
+            print(
+                f"lab health: path still down — {probe} — if this persists, "
+                "run 'make lab-reset' to rebuild the lab"
+            )
+            healthy = False
+    return healthy
+
+
 def _assert_until_consumed(adapter: DeviceAdapter, node: str) -> bool:
-    """Re-issue port/IP baseline config until APPL_DB proves it was consumed.
+    """Assert port/IP baseline config until APPL_DB proves it was consumed.
 
     Config written while the port stack is still initializing is silently lost (no replay on
-    this image), so each round re-applies the idempotent asserts and checks consumed truth.
+    this image). The full ``config load`` runs rarely — verified on-lab: repeated loads make
+    orchagent re-create HOSTIFs, which fails (SAI_STATUS_FAILURE) and permanently kills the
+    tap↔veth pumps. Light idempotent asserts (startup + ip add) run every round instead.
     """
     check_spec = f'{node}: sonic-db-cli APPL_DB hget "PORT_TABLE:Ethernet0" admin_status'
     for round_no in range(_ASSERT_ROUNDS):
-        adapter.run(f"{node}: config load {BASELINE_DB} -y", timeout=120)
+        if round_no % 10 == 0:
+            adapter.run(f"{node}: config load {BASELINE_DB} -y", timeout=120)
         for port in LESSON_PORTS:
             adapter.run(f"{node}: config interface startup {port}")
         for command in _baseline_ip_adds(node):

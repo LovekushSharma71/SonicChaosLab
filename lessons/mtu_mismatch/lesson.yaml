@@ -92,6 +92,10 @@ steps:
   kind: qna
   title: 'S7: Questions — MTU vs the control plane'
   optional: true
+- id: q_baseline
+  kind: qna
+  title: Questions — interrogate the healthy baseline
+  optional: false
 - id: chaos
   kind: chaos_select
   title: Pick one failure to inject (7 options)
@@ -112,7 +116,7 @@ commands:
   - 'leaf1: show interfaces status'
   - 'leaf2: show interfaces status'
   - 'leaf1: show ip route 10.0.2.0/24'
-  - 'leaf1: show bgp summary'
+  - 'leaf1: vtysh -c "show bgp summary"'
   - 'h1: ping -c 5 10.0.2.10'
   - 'h1: ping -M do -s 1472 -c 5 10.0.2.10'
   - 'h1: ping -M do -s 8972 -c 5 10.0.2.10'
@@ -143,7 +147,7 @@ commands:
     - 'leaf1: show interfaces status'
     - 'leaf2: show interfaces status'
     o_bgp_mtu:
-    - 'leaf1: show bgp summary'
+    - 'leaf1: vtysh -c "show bgp summary"'
     - 'leaf1: show interfaces status'
     - 'h1: ping -M do -s 8972 -c 3 10.0.2.10'
   vocabulary:
@@ -151,7 +155,7 @@ commands:
   - show interfaces counters*
   - show ip interfaces*
   - show ip route*
-  - show bgp summary*
+  - vtysh -c "show bgp summary*
   - config interface mtu*
   - sonic-db-cli CONFIG_DB *
   - sonic-db-cli APPL_DB *
@@ -364,6 +368,10 @@ qna:
     - Why does BGP stay Established when a 1500 MTU is blackholing h1→h3 jumbo data?
     - What is MSS, and how does it keep TCP under the MTU ceiling?
     - How is this the ultimate example of control plane vs data plane?
+    q_baseline:
+    - What is MTU, and why is it 9100 here instead of 1500?
+    - Why is a path only as wide as its narrowest link?
+    - What are the two things that can happen to a too-big packet?
     q_impact:
     - What changed after the injection — which ping sizes now fail?
     - Why does the interface stay up while large packets are dropped?

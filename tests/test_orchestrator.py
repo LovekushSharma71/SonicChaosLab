@@ -108,19 +108,19 @@ def test_redirect_cap_enforced(repo_root):
     assert orch.questions_left == orch.question_budget  # redirects never spend budget
 
 
-def test_memory_flush_on_advance(repo_root):
+def test_memory_persists_across_advance(repo_root):
     orch = _orch(repo_root)
     _goto(orch, "qna")
     orch.ask("What does bgp established mean?")
     assert orch.memory.pairs
     orch.advance()
-    assert orch.memory.pairs == []
+    assert orch.memory.pairs  # last 3 Q&A persist across steps within the lesson
 
 
 def test_experiment_command_path(repo_root):
     orch = _orch(repo_root)
     _goto(orch, "qna")
-    result = orch.experiment("leaf1: show bgp summary", explain=True)
+    result = orch.experiment('leaf1: vtysh -c "show bgp summary"', explain=True)
     assert result.executed and result.relevant and result.safe
     assert "10.0.12.1" in result.output
     assert result.budget_spent
@@ -138,7 +138,8 @@ def test_experiment_nl_proposes_then_confirms(repo_root):
     orch = _orch(repo_root)
     _goto(orch, "qna")
     proposal = orch.experiment("please check the bgp neighbors", confirm=False)
-    assert not proposal.executed and proposal.proposed_command == "leaf1: show bgp summary"
+    assert not proposal.executed
+    assert proposal.proposed_command == 'leaf1: vtysh -c "show bgp summary"'
     confirmed = orch.experiment("please check the bgp neighbors", explain=False, confirm=True)
     assert confirmed.executed
 

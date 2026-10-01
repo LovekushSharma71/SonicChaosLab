@@ -1,0 +1,1 @@
+02:42:ac:14:14:03 dev Bridge vlan 10 master Bridge permanent

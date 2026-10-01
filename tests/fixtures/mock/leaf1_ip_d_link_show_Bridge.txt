@@ -1,0 +1,2 @@
+35: Bridge: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9100 state UP
+    bridge forward_delay 1500 hello_time 200 max_age 2000 ageing_time 30000

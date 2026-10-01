@@ -114,6 +114,21 @@ authored lessons (or this build prompt) that should be folded back into the docs
 - Verified on-lab: `show mac` and ASIC_DB FDB stay empty on docker-sonic-vs even with traffic;
   real MAC learning lives in the kernel bridge — `bridge fdb show br Bridge` is the truth source
   (switches_explained's observe steps must use it when lab-verifying lessons).
+- vs-broken command families fixed (2026-09-30): `show ip route`/`show runningconfiguration`
+  failed only because SONiC's CLI shells `sudo rvtysh` (absent on vs) — the sudo shim now maps
+  rvtysh→vtysh, healing them with zero lesson edits. The `show bgp *` click group is broken →
+  lessons author `vtysh -c "show bgp …"` (identical output; metrics dispatch unwraps the vtysh
+  envelope). No nested docker → `docker ps`/`docker exec` became `supervisorctl status …`, and
+  c_stop_swss's systemctl inject became `supervisorctl stop/start orchagent`. Old fixture keys
+  kept alongside new ones for parser tests.
+- FDB facts migrated to the kernel bridge (2026-09-30): `bridge fdb show br Bridge` feeds the
+  `mac_table` facts via a new `parse_bridge_fdb` (containerlab's `aa:c1:ab:*` veth MACs filtered
+  as transient infra); `show mac` stays in the o_mac step as a display-only beat — its empty vs
+  view teaches the CLI-renders-a-database point — and no longer writes facts (would zero the real
+  ones). c_clear_fdb now also flushes the kernel bridge (`bridge fdb flush dev Bridge` — verified
+  working), and FDB-affecting restores ping from BOTH leaf1 hosts so verify can fully heal.
+  Kernel ageing_time = 30000 cs (300 s) read via `ip -d link show Bridge`; chaos+restore
+  roundtrip live-verified (diff fires, healed=True).
 - Fake provider now returns an explicit "(not implemented …)" placeholder for explanations and
   Q&A instead of mock grounded prose — honest about the missing LLM (user decision 2026-09-30).
 - Experiment gates (relevance + read-only safety) are code-disabled behind `_GATES_ENABLED` until
@@ -121,3 +136,15 @@ authored lessons (or this build prompt) that should be folded back into the docs
 - First boot to a working SONiC CLI is ~4 min on a small vCPU host → ready timeout is 420 s.
 - `DeviceAdapter.run()` grew an optional per-call `timeout` because baseline `config load` and
   first-boot commands exceed the 30 s exec default.
+- ROOT CAUSE of the recurring "one-way dataplane wedge" (2026-10-01, user repro on a fresh lab):
+  `bridge fdb flush dev Bridge` (S4 choreography + c_clear_fdb inject) deletes the bridge's own
+  *local* FDB entry — the row that delivers gateway-addressed frames up to the SVI — silently
+  blackholing every host→gateway path while MAC learning keeps working (ingress-only). With the
+  old arp_ignore=0 the raw-veth ARP path randomly masked it (the 0/66/80/100 % intermittence);
+  with arp_ignore=1 it became deterministic and reproducible on demand. Fixes: lesson/chaos use
+  `bridge fdb flush dev Bridge dynamic` (verified: wipes learned rows, keeps local, 0 % loss);
+  `_LOCAL_FDB_FIX` re-asserts the local entry per Vlan in verify_dataplane + apply_baseline;
+  restore() escalates when ping facts are dirty even if the before-diff is clean (a broken
+  'before' made 100 %→100 % read as healed). Live-verified: S4 pings 0 %, c_clear_fdb roundtrip
+  heals in ~13 s via flood-and-relearn, no escalation.
+

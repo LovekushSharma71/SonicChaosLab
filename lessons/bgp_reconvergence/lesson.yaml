@@ -103,6 +103,10 @@ steps:
   kind: qna
   title: 'S8: Questions — control vs data plane'
   optional: true
+- id: q_baseline
+  kind: qna
+  title: Questions — interrogate the healthy baseline
+  optional: false
 - id: chaos
   kind: chaos_select
   title: Pick one failure to inject (9 options)
@@ -117,23 +121,23 @@ steps:
   optional: false
 commands:
   baseline:
-  - 'leaf1: show bgp summary'
+  - 'leaf1: vtysh -c "show bgp summary"'
   - 'leaf1: show ip interfaces'
   after_chaos:
-  - 'leaf1: show bgp summary'
+  - 'leaf1: vtysh -c "show bgp summary"'
   - 'leaf1: show ip route 10.0.2.0/24'
   - 'leaf1: show interfaces status'
   - 'leaf1: sonic-db-cli APPL_DB keys "ROUTE_TABLE:10.0.2.0/24"'
   - 'h1: ping -c 10 10.0.2.10'
-  - 'leaf2: show bgp summary'
+  - 'leaf2: vtysh -c "show bgp summary"'
   per_step:
     o_peering:
-    - 'leaf1: show bgp summary'
+    - 'leaf1: vtysh -c "show bgp summary"'
     - 'leaf1: show ip interfaces'
     o_advertise:
-    - 'leaf1: show bgp neighbors 10.0.12.1 advertised-routes'
-    - 'leaf1: show bgp neighbors 10.0.12.1 received-routes'
-    - 'leaf1: show bgp neighbors 10.0.12.3 received-routes'
+    - 'leaf1: vtysh -c "show bgp neighbors 10.0.12.1 advertised-routes"'
+    - 'leaf1: vtysh -c "show bgp neighbors 10.0.12.1 received-routes"'
+    - 'leaf1: vtysh -c "show bgp neighbors 10.0.12.3 received-routes"'
     o_routes:
     - 'leaf1: show ip route'
     - 'leaf1: show ip route 10.0.2.0/24'
@@ -145,15 +149,15 @@ commands:
     - 'leaf1: sonic-db-cli APPL_DB keys "ROUTE_TABLE:10.0.2.0/24"'
     - 'leaf1: sonic-db-cli ASIC_DB keys "ASIC_STATE:SAI_OBJECT_TYPE_NEXT_HOP_GROUP*"'
     o_timers:
-    - 'leaf1: show bgp neighbors 10.0.12.1'
+    - 'leaf1: vtysh -c "show bgp neighbors 10.0.12.1"'
     o_messages:
-    - 'leaf1: show bgp neighbors 10.0.12.1'
+    - 'leaf1: vtysh -c "show bgp neighbors 10.0.12.1"'
     o_dataplane:
     - 'h1: ping -c 5 10.0.2.10'
-    - 'leaf1: show bgp summary'
+    - 'leaf1: vtysh -c "show bgp summary"'
     - 'leaf1: show ip route 10.0.2.0/24'
   vocabulary:
-  - show bgp*
+  - vtysh -c "show bgp*
   - show ip bgp*
   - show ip route*
   - show ip interfaces*
@@ -396,6 +400,10 @@ qna:
     - What's the difference between the control plane and the data plane here?
     - Why might h1→h3 keep working after you stop the bgp container?
     - How can the session be Established while the ping fails?
+    q_baseline:
+    - What does "Established" mean in `show bgp summary`, and how do I tell at a glance?
+    - Why do leaf1 and leaf2 have different AS numbers, and what makes this eBGP?
+    - What are the two neighbors leaf1 has, and why two?
     q_impact:
     - What failed, and which facts changed after the injection?
     - Why did the route count and ping loss change the way they did?

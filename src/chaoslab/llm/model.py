@@ -92,30 +92,38 @@ class AnthropicClient(ModelClient):
         self.model = model
         self.key = key
 
-    def generate(self, request: GenerationRequest) -> str:
+    def _client(self):
         import anthropic
 
-        client = anthropic.Anthropic(api_key=self.key, timeout=_TIMEOUT_S)
-        message = client.messages.create(
-            model=self.model,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            system=request.system,
-            messages=[{"role": "user", "content": f"{request.context}\n\n{request.task}"}],
-        )
+        # Default (non-workspace-scoped) keys require this header; set it when provided.
+        workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+        headers = {"anthropic-workspace-id": workspace} if workspace else None
+        return anthropic.Anthropic(api_key=self.key, timeout=_TIMEOUT_S, default_headers=headers)
+
+    def _kwargs(self, method: object, request: GenerationRequest) -> dict:
+        import inspect
+
+        kwargs: dict = {
+            "model": self.model,
+            "max_tokens": request.max_tokens,
+            "system": request.system,
+            "messages": [{"role": "user", "content": f"{request.context}\n\n{request.task}"}],
+        }
+        try:  # SDKs >=1.9 dropped top-level temperature in favour of output_config.effort
+            if "temperature" in inspect.signature(method).parameters:
+                kwargs["temperature"] = request.temperature
+        except (TypeError, ValueError):
+            pass
+        return kwargs
+
+    def generate(self, request: GenerationRequest) -> str:
+        client = self._client()
+        message = client.messages.create(**self._kwargs(client.messages.create, request))
         return "".join(block.text for block in message.content if block.type == "text")
 
     def stream(self, request: GenerationRequest) -> Iterator[str]:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=self.key, timeout=_TIMEOUT_S)
-        with client.messages.stream(
-            model=self.model,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            system=request.system,
-            messages=[{"role": "user", "content": f"{request.context}\n\n{request.task}"}],
-        ) as stream:
+        client = self._client()
+        with client.messages.stream(**self._kwargs(client.messages.stream, request)) as stream:
             yield from stream.text_stream
 
 
